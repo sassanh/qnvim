@@ -10,6 +10,7 @@
 #include <coreplugin/coreconstants.h>
 #include <texteditor/texteditor.h>
 #include <utils/osspecificaspects.h>
+#include <gui/shell.h>
 #include <neovimconnector.h>
 #include <msgpackrequest.h>
 
@@ -112,7 +113,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
     }
     if (event->type() == QEvent::Resize) {
         TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(object);
-        unsigned height = textEditor->rowCount() - 1;
+        unsigned height = textEditor->rowCount() - 2;
         unsigned width = textEditor->columnCount();
         mNVim->api2()->nvim_ui_try_resize(width, height);
     }
@@ -139,8 +140,8 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
             text = "\x08";
         text = "char-" + QString::number(text.at(0).unicode());
 
-        if (modifiers & Qt::ShiftModifier)
-            text = "s-" + text;
+        // if (modifiers & Qt::ShiftModifier)
+        //     text = "s-" + text;
         if (modifiers & Qt::MetaModifier)
             text = "c-" + text;
         if (modifiers & Qt::AltModifier)
@@ -163,14 +164,14 @@ void QNVimPlugin::toggleQNVim() {
         foreach (QString key, mEditors.keys()) {
             Core::IEditor *editor = mEditors[key];
             if (!editor)
-                return;
+                continue;
 
             QWidget *widget = editor->widget();
             if (!widget)
-                return;
+                continue;
 
             if (!qobject_cast<QTextEdit *>(widget) && !qobject_cast<QPlainTextEdit *>(widget))
-                return;
+                continue;
 
             TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(widget);
             textEditor->setCursorWidth(1);
@@ -309,7 +310,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
     else if (mMode == "normal")
         textEditor->setCursorWidth(11);
 
-    unsigned height = textEditor->rowCount() - 1;
+    unsigned height = textEditor->rowCount() - 2;
     unsigned width = textEditor->columnCount();
     if (width != mWidth or height != mHeight)
         mNVim->api2()->nvim_ui_try_resize(width, height);
