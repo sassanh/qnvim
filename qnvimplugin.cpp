@@ -24,7 +24,7 @@
 namespace QNVim {
 namespace Internal {
 
-QNVimPlugin::QNVimPlugin(): mNVim(NULL), mHeight(35), mBusy(false), mMouse(false)
+QNVimPlugin::QNVimPlugin(): mNVim(NULL), mWidth(80), mHeight(35), mBusy(false), mMouse(false)
 {
     for (unsigned i = 0; i < mHeight; i++)
         mContent << QString("");
@@ -74,7 +74,7 @@ bool QNVimPlugin::initialize()
         options.insert("ext_cmdline", false);
         options.insert("ext_wildmenu", false);
         options.insert("rgb", true);
-        NeovimQt::MsgpackRequest *req = mNVim->api2()->nvim_ui_attach(115, mHeight, options);
+        NeovimQt::MsgpackRequest *req = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
         connect(req, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
         connect(req, &NeovimQt::MsgpackRequest::timeout, [=]() {
             qWarning() << "THE FUCK HAPPENED!";
@@ -287,6 +287,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             mMouse = false;
         }
         else if (command == "resize") {
+            mWidth = line.first().toList()[0].toString().toInt();
             mHeight = line.first().toList()[1].toString().toInt();
             if ((unsigned)mContent.size() < mHeight)
                 for (unsigned i = (unsigned)mContent.size(); i < mHeight; i++)
@@ -307,6 +308,11 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         textEditor->setCursorWidth(1);
     else if (mMode == "normal")
         textEditor->setCursorWidth(11);
+
+    unsigned height = textEditor->rowCount() - 1;
+    unsigned width = textEditor->columnCount();
+    if (width != mWidth or height != mHeight)
+        mNVim->api2()->nvim_ui_try_resize(width, height);
 }
 
 } // namespace Internal

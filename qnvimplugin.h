@@ -48,7 +48,7 @@ private:
     QMap<QString, Core::IEditor *> mEditors;
     QStringList mContent;
 
-    unsigned mHeight;
+    unsigned mWidth, mHeight;
     bool mBusy;
     bool mMouse;
     QByteArray mMode;
