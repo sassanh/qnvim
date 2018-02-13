@@ -1,0 +1,11 @@
+{
+    \"Name\" : \"QNVim\",
+    \"Version\" : \"0.0.1\",
+    \"CompatVersion\" : \"0.0.1\",
+    \"Vendor\" : \"Sassan\",
+    \"Copyright\" : \"(C) Sassan Haradji\",
+    \"License\" : \"MIT\",
+    \"Description\" : \"NeoVim Backend for QtCreator\",
+    \"Url\" : \"\",
+    $$dependencyList
+}
