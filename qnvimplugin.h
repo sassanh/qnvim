@@ -40,6 +40,7 @@ protected:
     QString filename(Core::IEditor * = NULL) const;
 
     void fixSize(Core::IEditor * = NULL);
+    void syncCursorToVim();
     void syncToVim(bool = false);
     void syncFromVim(bool = false);
 

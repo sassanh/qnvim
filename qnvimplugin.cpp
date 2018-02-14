@@ -63,6 +63,19 @@ void QNVimPlugin::fixSize(Core::IEditor *editor) {
 //    }
 }
 
+void QNVimPlugin::syncCursorToVim() {
+    Core::IEditor *editor = Core::EditorManager::currentEditor();
+    TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    QString text = textEditor->toPlainText();
+    unsigned cursorPosition = textEditor->textCursor().position();
+    unsigned line = text.left(cursorPosition).count("\n") + 1;
+    unsigned col = text.left(cursorPosition).section("\n", -1).toUtf8().length() + 1;
+    mCursor.setY(line);
+    mCursor.setX(col);
+    mNVim->api2()->nvim_command(QString("call setpos('.', [%1,%2,%3])").arg(mBuffers[filename()]).
+            arg(line).arg(col).toUtf8());
+}
+
 void QNVimPlugin::syncToVim(bool force) {
     if (not mSyncMutex.tryLock()) {
         if (force)
@@ -75,11 +88,7 @@ void QNVimPlugin::syncToVim(bool force) {
     QList<QByteArray> textLines = text.toUtf8().split('\n');
     mNVim->api2()->nvim_command(QString("buffer %1").arg(mBuffers[filename()]).toUtf8());
     mNVim->api2()->nvim_buf_set_lines(mBuffers[filename()], 0, textLines.size(), false, textLines);
-    unsigned cursorPosition = textEditor->textCursor().position();
-    unsigned line = text.left(cursorPosition).count("\n") + 1;
-    unsigned col = text.left(cursorPosition).section("\n", -1).toUtf8().length() + 1;
-    mNVim->api2()->nvim_command(QString("call setpos('.', [%1,%2,%3])").arg(mBuffers[filename()]).
-        arg(line).arg(col).toUtf8());
+    syncCursorToVim();
     mSyncMutex.unlock();
 }
 
@@ -274,6 +283,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
     if (mEditors.contains(filename(editor))) {
     }
     else {
+        TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
         widget->installEventFilter(this);
 
         if (mNVim and mNVim->isReady()) {
@@ -293,11 +303,13 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
 
         mEditors[filename(editor)] = editor;
         Core::IDocument *document = editor->document();
+        connect(textEditor, &TextEditor::TextEditorWidget::cursorPositionChanged, [=]() {
+            syncCursorToVim();
+        });
         connect(document, &Core::IDocument::changed, [=]() {
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", document->isModified());
-                });
+            mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", document->isModified());
+        });
         connect(document, &Core::IDocument::contentsChanged, [=]() {
-            TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
             QString newText = textEditor->toPlainText();
             if (newText == mText)
                 return;
@@ -421,7 +433,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             if (val != -1) {
                 mBackgroundColor = QRgb(val);
                 QPalette palette = textEditor->palette();
-                palette.setColor(QPalette::Background, mBackgroundColor);
+                palette.setBrush(QPalette::Background, mBackgroundColor);
                 textEditor->setPalette(palette);
             }
         }
