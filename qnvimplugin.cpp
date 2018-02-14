@@ -1,5 +1,6 @@
 #include "qnvimplugin.h"
 #include "qnvimconstants.h"
+#include "diff_match_patch.h"
 
 #include <coreplugin/icontext.h>
 #include <coreplugin/editormanager/ieditor.h>
@@ -9,8 +10,8 @@
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/coreconstants.h>
 #include <texteditor/texteditor.h>
+#include <texteditor/textdocument.h>
 #include <utils/osspecificaspects.h>
-#include <gui/shellwidget/shellwidget.h>
 #include <neovimconnector.h>
 #include <msgpackrequest.h>
 
@@ -39,49 +40,6 @@ QNVimPlugin::~QNVimPlugin() {
         mNVim->deleteLater();
 }
 
-QPoint QNVimPlugin::neovimCursorTopLeft() const {
-    if (not shellWidget())
-        return QPoint();
-	return QPoint(mCursor.x() * shellWidget()->cellSize().width(),
-			mCursor.y() * shellWidget()->cellSize().height());
-}
-
-QRect QNVimPlugin::neovimCursorRect() const {
-	return neovimCursorRect(mCursor);
-}
-
-QRect QNVimPlugin::neovimCursorRect(QPoint) const {
-//	const Cell& c = contents().constValue(at.y(), at.x());
-//	bool wide = c.doubleWidth;
-    if (not shellWidget())
-        return QRect();
-	QRect r(neovimCursorTopLeft(), shellWidget()->cellSize());
-//	if (wide) {
-//		r.setWidth(r.width() * 2);
-//	}
-	return r;
-}
-
-ShellWidget *QNVimPlugin::shellWidget(Core::IEditor *editor) const {
-    if (not editor)
-        editor = Core::EditorManager::currentEditor();
-    if (mShells.contains(filename(editor)))
-        return mShells[filename(editor)];
-    else
-        return NULL;
-}
-
-ShellWidget *QNVimPlugin::shellWidget(Core::IEditor *editor) {
-    if (not editor)
-        editor = Core::EditorManager::currentEditor();
-    if (mShells.contains(filename(editor)))
-        return mShells[filename(editor)];
-    else {
-        editorOpened(editor);
-        return shellWidget(editor);
-    }
-}
-
 QString QNVimPlugin::filename(Core::IEditor *editor) const {
     if (not editor)
         editor = Core::EditorManager::currentEditor();
@@ -93,14 +51,14 @@ QString QNVimPlugin::filename(Core::IEditor *editor) const {
 void QNVimPlugin::fixSize(Core::IEditor *editor) {
     if (not editor)
         editor = Core::EditorManager::currentEditor();
-    unsigned desiredWidth = editor->widget()->width() / shellWidget(editor)->cellSize().width();
-    unsigned desiredHeight = editor->widget()->height() / shellWidget(editor)->cellSize().height();
-    unsigned width = shellWidget(editor)->columns();
-    unsigned height = shellWidget(editor)->rows();
-    if (width != desiredWidth or height != desiredHeight) {
-        shellWidget(editor)->resize(editor->widget()->width(), editor->widget()->height());
-        shellWidget(editor)->resizeShell(desiredHeight, desiredWidth);
-    }
+//    unsigned desiredWidth = editor->widget()->width() / shellWidget(editor)->cellSize().width();
+//    unsigned desiredHeight = editor->widget()->height() / shellWidget(editor)->cellSize().height();
+//    unsigned width = shellWidget(editor)->columns();
+//    unsigned height = shellWidget(editor)->rows();
+//    if (width != desiredWidth or height != desiredHeight) {
+//        shellWidget(editor)->resize(editor->widget()->width(), editor->widget()->height());
+//        shellWidget(editor)->resizeShell(desiredHeight, desiredWidth);
+//    }
 }
 
 void QNVimPlugin::syncToVim() {
@@ -108,8 +66,47 @@ void QNVimPlugin::syncToVim() {
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QList<QByteArray> text = textEditor->toPlainText().toUtf8().split('\n');
     mNVim->api2()->nvim_command(QString("buffer %1").arg(mBuffers[filename()]).toUtf8());
-    qWarning() << text;
     mNVim->api2()->nvim_buf_set_lines(mBuffers[filename()], 0, text.size(), false, text);
+}
+
+void QNVimPlugin::syncFromVim() {
+    Core::IEditor *editor = Core::EditorManager::currentEditor();
+    TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    mNVim->api2()->nvim_command(QString("buffer %1").arg(mBuffers[filename()]).toUtf8());
+    connect(mNVim->api2()->nvim_eval("[winsaveview(), &modified]"), &NeovimQt::MsgpackRequest::finished,
+            [=](quint32, quint64, const QVariant &v) {
+        QVariantMap wview = v.toList()[0].toMap();
+        bool modified = v.toList()[1].toBool();
+        connect(mNVim->api2()->nvim_buf_get_lines(mBuffers[filename()], 0, -1, true),
+                &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
+			QString text;
+			for (auto t: lines.toList())
+			text += QString::fromUtf8(t.toByteArray()) + '\n';
+            /* QByteArray text; */
+            /* for (auto t: lines.toList()) */
+            /*     text += t.toByteArray() + '\n'; */
+            text.chop(1);
+//            textEditor->document()->findBlockByLineNumber
+		    QString oldText = textEditor->toPlainText();
+            /* textEditor->textDocument()->setContents(text); */
+	    	diff_match_patch differ;
+			QList<Diff> diffs = differ.diff_main(oldText, text);
+			differ.diff_cleanupEfficiency(diffs);
+			QList<Patch> patches = differ.patch_make(oldText, diffs);
+
+			QTextCursor cursor = textEditor->textCursor();
+			for (auto patch: patches) {
+				cursor.setPosition(patch.start1);
+				cursor.setPosition(patch.start1 + patch.length1, QTextCursor::KeepAnchor);
+				cursor.insertText(text.mid(patch.start2, patch.length2));
+			}
+
+            textEditor->document()->setModified(modified);
+            mCursor.setY(wview["lnum"].toULongLong());
+            mCursor.setX(wview["curswant"].toULongLong());
+            textEditor->gotoLine(mCursor.y(), mCursor.x());
+        });
+    });
 }
 
 bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
@@ -185,36 +182,11 @@ ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown()
 
 bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
     if (qobject_cast<QTextEdit *>(object) or qobject_cast<QPlainTextEdit *>(object)) {
-//        if (event->type() == QEvent::FocusIn) {
-//            QFocusEvent *focusEvent = static_cast<QFocusEvent *>(event);
-//            shellWidget()->setFocus(focusEvent->reason());
-//            return true;
-//        }
-    }
-    else {
-        if (event->type() == QEvent::Paint) {
-            QPaintEvent *paintEvent = static_cast<QPaintEvent *>(event);
-
-            if (paintEvent->region().contains(neovimCursorTopLeft())) {
-                bool wide = false; // contents().constValue(mCursor.y(), mCursor.x()).doubleWidth; TODO
-                QRect cursorRect(neovimCursorTopLeft(), shellWidget()->cellSize());
-
-                if (mMode == "insert")
-                    cursorRect.setWidth(2);
-                else if (wide)
-                    cursorRect.setWidth(cursorRect.width()*2);
-
-                QPainter painter(shellWidget());
-                painter.setCompositionMode(QPainter::RasterOp_SourceXorDestination);
-                painter.fillRect(cursorRect, mCursorColor);
-            }
-            return false;
-        }
-        else if (event->type() == QEvent::Resize) {
+        if (event->type() == QEvent::Resize) {
             QResizeEvent *resizeEvent = static_cast<QResizeEvent *>(event);
-            unsigned width = resizeEvent->size().width() / shellWidget()->cellSize().width();
-            unsigned height = resizeEvent->size().height() / shellWidget()->cellSize().height();
-            mNVim->api2()->nvim_ui_try_resize(width, height);
+//            unsigned width = resizeEvent->size().width() / shellWidget()->cellSize().width();
+//            unsigned height = resizeEvent->size().height() / shellWidget()->cellSize().height();
+//            mNVim->api2()->nvim_ui_try_resize(width, height);
             return false;
         }
     }
@@ -228,16 +200,18 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
             return true;
 
         Qt::KeyboardModifiers modifiers = QGuiApplication::keyboardModifiers();
-        QString text = keyEvent->text();
         //        const Qt::KeyboardModifier controlKey = Utils::OsSpecificAspects::;
-        qWarning() << text << keyEvent->key();
-        if (text.isEmpty() and text != " ")
-            text = QChar(keyEvent->key());
+        QString text = QChar(keyEvent->key());
+        qWarning() << text << keyEvent->text() << keyEvent->key();
+        if (not(modifiers & Qt::ShiftModifier))
+            text = text.toLower();
         assert(text.length() == 1);
         qWarning() << text;
-        if (text == "\x7f")
-            text = "\x08";
         text = "char-" + QString::number(text.at(0).unicode());
+        if (keyEvent->key() == Qt::Key_Backspace)
+            text = "BS";
+        if (keyEvent->key() == Qt::Key_Delete)
+            text = "Del";
 
         // if (modifiers & Qt::ShiftModifier)
         //     text = "s-" + text;
@@ -263,7 +237,7 @@ void QNVimPlugin::toggleQNVim() {
         this->initialize();
     else {
         connect(mNVim->api2()->nvim_command(":q!"), &NeovimQt::MsgpackRequest::finished, [=] () {mNVim->deleteLater(); mNVim = NULL;});
-        foreach (QString key, mEditors.keys()) {
+        for(auto key: mEditors.keys()) {
             Core::IEditor *editor = mEditors[key];
             if (!editor)
                 continue;
@@ -279,8 +253,6 @@ void QNVimPlugin::toggleQNVim() {
             textEditor->setCursorWidth(1);
             widget->removeEventFilter(this);
             mEditors.remove(key);
-            mShells[key]->deleteLater();
-            mShells.remove(key);
         }
     }
 }
@@ -310,9 +282,10 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
                 mBuffers[filename(editor)] = v.toULongLong();
                 
                 mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", "-1");
+                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", -1);
                 syncToVim();
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", "-123456");
+                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", -123456);
+                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", false);
                 mNVim->api2()->nvim_buf_set_name(mBuffers[filename(editor)], filename(editor).toUtf8());
             });
         }
@@ -320,11 +293,6 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
         mEditors[filename(editor)] = editor;
         widget->installEventFilter(this);
         
-        ShellWidget *shellWidget = new ShellWidget(widget);
-        shellWidget->setFocusPolicy(Qt::NoFocus);
-        shellWidget->installEventFilter(this);
-        shellWidget->hide();
-        mShells[filename(editor)] = shellWidget;
         fixSize(editor);
     }
 }
@@ -333,8 +301,6 @@ void QNVimPlugin::editorAboutToClose(Core::IEditor *editor)
 {
     mNVim->api2()->nvim_command(QString("bw bufnr('%1").arg(filename(editor)).toUtf8());
     mEditors.remove(filename(editor));
-    mShells[filename(editor)]->deleteLater();
-    mShells.remove(filename(editor));
 }
 
 void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList &args)
@@ -355,47 +321,27 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         return;
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
-    foreach (QVariant arg, args) {
+    QPoint cursor;
+    for(auto arg: args) {
         QVariantList line = arg.toList();
         QByteArray command = line.first().toByteArray();
         line = line.mid(1);
         if (command == "cursor_goto") {
-            shellWidget(editor)->update(neovimCursorRect());
-            mCursor.setY(line.first().toList()[0].toString().toInt() + 1);
-            mCursor.setX(line.first().toList()[1].toString().toInt());
-            textEditor->gotoLine(mCursor.y(), mCursor.x());
-//            qWarning() << mCursor;
-            shellWidget(editor)->update(neovimCursorRect());
+            cursor.setY(line.first().toList()[0].toString().toInt() + 1);
+            cursor.setX(line.first().toList()[1].toString().toInt());
+//            qWarning() << cursor;
         }
         else if (command == "put") {
-//            if (mCursor.y() > mContent.size())
-//                continue;
-//            QString l = mContent[mCursor.y() - 1];
             QString text;
-            foreach(QVariant j, line)
-                foreach(QVariant k, j.toList())
+            for(auto j: line)
+                for(auto k: j.toList())
                     text += k.toString();
-//            l = l.mid(0, mCursor.x()) + QString(mCursor.x() - l.length(), ' ') + text +
-//                    l.mid(mCursor.x() + text.length());
-//            mContent[mCursor.y() - 1] = l;
             
-//            shellWidget(editor)->update(neovimCursorRect());
-//            int cols = shellWidget(editor)->put(text, mCursor.y(), mCursor.x(),
-//                                        mForegroundColor, mBackgroundColor, mSpecialColor);
-////                               m_font_bold, m_font_italic,
-////                               m_font_underline, m_font_undercurl);
-//            Q_UNUSED(cols); // TODO
-            mCursor.setX(mCursor.x() + text.length());
-//            shellWidget(editor)->update(neovimCursorRect());
+            cursor.setX(cursor.x() + text.length());
         }
         else if (command == "clear") {
-            for (unsigned i = 0; i < (unsigned)mContent.size(); i++)
-                mContent[i] = "";
-            shellWidget(editor)->clearShell(mBackgroundColor);
         }
         else if (command == "eol_clear") {
-            mContent[mCursor.y() - 1] = mContent[mCursor.y() - 1].mid(0, mCursor.x());
-            shellWidget(editor)->clearRegion(mCursor.y(), mCursor.x(), mCursor.y() + 1, shellWidget(editor)->columns());
         }
         else if (command == "bell") {
             QApplication::beep();
@@ -413,14 +359,14 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             mScrollRegion.setRight(line.first().toList()[3].toString().toInt());
         }
         else if (command == "scroll") {
-            const int scroll = -line.first().toList()[0].toString().toInt();
+//            const int scroll = -line.first().toList()[0].toString().toInt();
 //            qWarning() << mScrollRegion << scroll;
-            for (signed i = scroll < 0 ? mScrollRegion.top() : mScrollRegion.bottom(); scroll < 0 ? i <= mScrollRegion.bottom() : i >= mScrollRegion.top(); scroll < 0 ? i++ : i--) {
-                QString toScroll = mContent[i].mid(mScrollRegion.left(), mScrollRegion.left() + mScrollRegion.right());
-                if ((scroll < 0 and i + scroll >= mScrollRegion.top()) or (scroll > 0 and i + scroll <= mScrollRegion.bottom()))
-                    mContent[i+scroll] = mContent[i+scroll].left(mScrollRegion.left()) + toScroll + mContent[i+scroll].mid(mScrollRegion.left() + mScrollRegion.right());
-                mContent[i] = mContent[i].left(mScrollRegion.left()) + QString(toScroll.length(), ' ') + mContent[i].mid(mScrollRegion.left() + mScrollRegion.right());
-            }
+//            for(signed i = scroll < 0 ? mScrollRegion.top() : mScrollRegion.bottom(); scroll < 0 ? i <= mScrollRegion.bottom() : i >= mScrollRegion.top(); scroll < 0 ? i++ : i--) {
+//                QString toScroll = mContent[i].mid(mScrollRegion.left(), mScrollRegion.left() + mScrollRegion.right());
+//                if ((scroll < 0 and i + scroll >= mScrollRegion.top()) or (scroll > 0 and i + scroll <= mScrollRegion.bottom()))
+//                    mContent[i+scroll] = mContent[i+scroll].left(mScrollRegion.left()) + toScroll + mContent[i+scroll].mid(mScrollRegion.left() + mScrollRegion.right());
+//                mContent[i] = mContent[i].left(mScrollRegion.left()) + QString(toScroll.length(), ' ') + mContent[i].mid(mScrollRegion.left() + mScrollRegion.right());
+//            }
         }
         else if (command == "busy_start") {
             mBusy = true;
@@ -437,18 +383,11 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         else if (command == "resize") {
             mWidth = line.first().toList()[0].toULongLong();
             mHeight = line.first().toList()[1].toULongLong();
-            if ((unsigned)mContent.size() < mHeight)
-                for (unsigned i = (unsigned)mContent.size(); i < mHeight; i++)
-                    mContent << QString();
-            while ((unsigned)mContent.size() > mHeight)
-                mContent.removeLast();
-            shellWidget(editor)->resizeShell(mHeight, mWidth);
         }
         else if (command == "update_fg") {
             qint64 val = line.first().toList()[0].toLongLong();
             if (val != -1) {
                 mForegroundColor = QRgb(val);
-                shellWidget(editor)->setForeground(mForegroundColor);
                 QPalette palette = textEditor->palette();
                 palette.setColor(QPalette::Foreground, mForegroundColor);
                 textEditor->setPalette(palette);
@@ -458,18 +397,15 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             qint64 val = line.first().toList()[0].toLongLong();
             if (val != -1) {
                 mBackgroundColor = QRgb(val);
-                shellWidget(editor)->setBackground(mBackgroundColor);
                 QPalette palette = textEditor->palette();
                 palette.setColor(QPalette::Background, mBackgroundColor);
                 textEditor->setPalette(palette);
             }
-            shellWidget(editor)->update();
         }
         else if (command == "update_sp") {
             qint64 val = line.first().toList()[0].toLongLong();
             if (val != -1) {
                 mSpecialColor = QRgb(val);
-                shellWidget(editor)->setSpecial(mSpecialColor);
             }
         }
         else {
@@ -477,8 +413,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         }
     }
 
-    qWarning() << mContent.join('\n');
-    textEditor->gotoLine(mCursor.y(), mCursor.x());
+    syncFromVim();
     if (mBusy)
         textEditor->setCursorWidth(0);
     if (mMode == "insert")
@@ -486,10 +421,6 @@ void QNVimPlugin::redraw(const QVariantList &args) {
     else if (mMode == "normal")
         textEditor->setCursorWidth(11);
 
-    unsigned width = shellWidget(editor)->columns();
-    unsigned height = shellWidget(editor)->rows();
-    if (width != mWidth or height != mHeight)
-        mNVim->api2()->nvim_ui_try_resize(width, height);
     fixSize(editor);
 }
 

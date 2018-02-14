@@ -15,8 +15,6 @@ namespace NeovimQt {
 class NeovimConnector;
 }
 
-class ShellWidget;
-
 namespace QNVim {
 namespace Internal {
 
@@ -29,10 +27,6 @@ public:
     QNVimPlugin();
     ~QNVimPlugin();
     
-	QPoint neovimCursorTopLeft() const;
-	QRect neovimCursorRect() const;
-	QRect neovimCursorRect(QPoint) const;
-
     bool initialize(const QStringList &, QString *);
     bool initialize();
     void extensionsInitialized();
@@ -42,12 +36,11 @@ public:
     void toggleQNVim();
 
 protected:
-    ShellWidget *shellWidget(Core::IEditor * = NULL) const;
-    ShellWidget *shellWidget(Core::IEditor * = NULL);
     QString filename(Core::IEditor * = NULL) const;
     
     void fixSize(Core::IEditor * = NULL);
     void syncToVim();
+    void syncFromVim();
 
 private:
 
@@ -62,9 +55,7 @@ private:
     NeovimQt::NeovimConnector *mNVim;
     unsigned mVimChanges;
     QMap<QString, Core::IEditor *> mEditors;
-    QMap<QString, ShellWidget *> mShells;
     QMap<QString, unsigned long long> mBuffers;
-    QStringList mContent;
 
     unsigned mWidth, mHeight;
     QColor mForegroundColor, mBackgroundColor, mSpecialColor;

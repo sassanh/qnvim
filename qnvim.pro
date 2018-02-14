@@ -3,11 +3,13 @@ DEFINES += QNVIM_LIBRARY
 
 # QNVim files
 
-SOURCES += qnvimplugin.cpp
+SOURCES += qnvimplugin.cpp \
+    ../qnvim/diff_match_patch.cpp
 
 HEADERS += qnvimplugin.h \
         qnvim_global.h \
-        qnvimconstants.h
+        qnvimconstants.h \
+    diff_match_patch.h
 
 # Qt Creator linking
 
@@ -19,7 +21,7 @@ isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = "/Volumes/Storage/tmp/qt-creator"
 ## Either set the IDE_BUILD_TREE when running qmake,
 ## or set the QTC_BUILD environment variable, to override the default setting
 isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
-isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = "/Volumes/Storage/tmp/qt-creator-build-debug"
+isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = "/Volumes/Storage/tmp/qt-creator-build"
 
 ## uncomment to build plugin into user config directory
 ## <localappdata>/plugins/<ideversion>
