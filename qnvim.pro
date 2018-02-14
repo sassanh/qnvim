@@ -50,4 +50,4 @@ QTC_PLUGIN_RECOMMENDS += \
 include($$IDE_SOURCE_TREE/src/qtcreatorplugin.pri)
 
 INCLUDEPATH += /Users/sassanharadji/tmp/neovim-qt/src/ /usr/local/Cellar/msgpack/2.1.5/include/
-LIBS += -L/Users/sassanharadji/tmp/neovim-qt/build/lib/ -lneovim-qt -lqshellwidget -L/usr/local/Cellar/msgpack/2.1.5/lib/ -l msgpackc
+LIBS += -L/Users/sassanharadji/tmp/neovim-qt/build/lib/ -lneovim-qt -lneovim-qt-gui -L/usr/local/Cellar/msgpack/2.1.5/lib/ -l msgpackc

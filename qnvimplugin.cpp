@@ -12,6 +12,7 @@
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
 #include <utils/osspecificaspects.h>
+#include <gui/input.h>
 #include <neovimconnector.h>
 #include <msgpackrequest.h>
 
@@ -28,7 +29,8 @@
 namespace QNVim {
 namespace Internal {
 
-QNVimPlugin::QNVimPlugin(): mEnabled(true), mNVim(NULL), mVimChanges(0), mWidth(80), mHeight(35),
+QNVimPlugin::QNVimPlugin(): mEnabled(true), mNVim(NULL), mInputConv(new NeovimQt::InputConv),
+    mVimChanges(0), mWidth(80), mHeight(35),
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
     mCursorColor(Qt::white),
     mBusy(false), mMouse(false)
@@ -70,10 +72,11 @@ void QNVimPlugin::syncToVim() {
 }
 
 void QNVimPlugin::syncFromVim() {
+    qWarning() << "SYNCING FROM VIM";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     mNVim->api2()->nvim_command(QString("buffer %1").arg(mBuffers[filename()]).toUtf8());
-    connect(mNVim->api2()->nvim_eval("[winsaveview(), &modified]"), &NeovimQt::MsgpackRequest::finished,
+    connect(mNVim->api2()->nvim_eval("[winsaveview(), &modified, line2byte('.')]"), &NeovimQt::MsgpackRequest::finished,
             [=](quint32, quint64, const QVariant &v) {
         QVariantMap wview = v.toList()[0].toMap();
         bool modified = v.toList()[1].toBool();
@@ -102,9 +105,14 @@ void QNVimPlugin::syncFromVim() {
 			}
 
             textEditor->document()->setModified(modified);
-            mCursor.setY(wview["lnum"].toULongLong());
-            mCursor.setX(wview["curswant"].toULongLong());
-            textEditor->gotoLine(mCursor.y(), mCursor.x());
+            unsigned long long cursorPosition = v.toList()[2].toULongLong();
+            unsigned line = wview["lnum"].toULongLong();
+            unsigned col = wview["col"].toULongLong();
+            cursorPosition = QString::fromUtf8(text.toUtf8().mid(0, cursorPosition + col - 1)).length();
+            mCursor.setY(line);
+            mCursor.setX(col);
+            textEditor->setCursorPosition(cursorPosition);
+            // textEditor->gotoLine(mCursor.y(), mCursor.x());
         });
     });
 }
@@ -136,7 +144,7 @@ bool QNVimPlugin::initialize()
     connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
             this, &QNVimPlugin::editorOpened);
 
-    mNVim = NeovimQt::NeovimConnector::spawn(QStringList() << "--cmd" << "autocmd VimEnter * set nonumber|set norelativenumber|set signcolumn=no",
+    mNVim = NeovimQt::NeovimConnector::spawn(QStringList() << "--cmd" << "autocmd VimEnter * set nowrap|set nonumber|set norelativenumber|set signcolumn=no",
                                              "/usr/local/bin/nvim");
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
@@ -192,83 +200,10 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
     }
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-
-        const int key = keyEvent->key();
-
-        if (key == Qt::Key_Shift or key == Qt::Key_Alt or key == Qt::Key_Control
-                or key == Qt::Key_AltGr or key == Qt::Key_Meta)
-            return true;
-
         Qt::KeyboardModifiers modifiers = QGuiApplication::keyboardModifiers();
-        //        const Qt::KeyboardModifier controlKey = Utils::OsSpecificAspects::;
-        QHash<int, QString> specialKeys;
-        specialKeys.insert(Qt::Key_Up, "Up");
-        specialKeys.insert(Qt::Key_Down, "Down");
-        specialKeys.insert(Qt::Key_Left, "Left");
-        specialKeys.insert(Qt::Key_Right, "Right");
-
-        specialKeys.insert(Qt::Key_F1, "F1");
-        specialKeys.insert(Qt::Key_F2, "F2");
-        specialKeys.insert(Qt::Key_F3, "F3");
-        specialKeys.insert(Qt::Key_F4, "F4");
-        specialKeys.insert(Qt::Key_F5, "F5");
-        specialKeys.insert(Qt::Key_F6, "F6");
-        specialKeys.insert(Qt::Key_F7, "F7");
-        specialKeys.insert(Qt::Key_F8, "F8");
-        specialKeys.insert(Qt::Key_F9, "F9");
-        specialKeys.insert(Qt::Key_F10, "F10");
-        specialKeys.insert(Qt::Key_F11, "F11");
-        specialKeys.insert(Qt::Key_F12, "F12");
-        specialKeys.insert(Qt::Key_F13, "F13");
-        specialKeys.insert(Qt::Key_F14, "F14");
-        specialKeys.insert(Qt::Key_F15, "F15");
-        specialKeys.insert(Qt::Key_F16, "F16");
-        specialKeys.insert(Qt::Key_F17, "F17");
-        specialKeys.insert(Qt::Key_F18, "F18");
-        specialKeys.insert(Qt::Key_F19, "F19");
-        specialKeys.insert(Qt::Key_F20, "F20");
-        specialKeys.insert(Qt::Key_F21, "F21");
-        specialKeys.insert(Qt::Key_F22, "F22");
-        specialKeys.insert(Qt::Key_F23, "F23");
-        specialKeys.insert(Qt::Key_F24, "F24");
-
-        specialKeys.insert(Qt::Key_Backspace, "BS");
-        specialKeys.insert(Qt::Key_Delete, "Del");
-        specialKeys.insert(Qt::Key_Insert, "Insert");
-        specialKeys.insert(Qt::Key_Home, "Home");
-        specialKeys.insert(Qt::Key_End, "End");
-        specialKeys.insert(Qt::Key_PageUp, "PageUp");
-        specialKeys.insert(Qt::Key_PageDown, "PageDown");
-
-        specialKeys.insert(Qt::Key_Return, "Enter");
-        specialKeys.insert(Qt::Key_Enter, "Enter");
-        specialKeys.insert(Qt::Key_Tab, "Tab");
-        specialKeys.insert(Qt::Key_Backtab, "Tab");
-        specialKeys.insert(Qt::Key_Escape, "Esc");
-
-        specialKeys.insert(Qt::Key_Backslash, "Bslash");
-        specialKeys.insert(Qt::Key_Space, "Space");
-
-        QString text = QChar(keyEvent->key());
-        qWarning() << text << keyEvent->text() << keyEvent->key();
-        if (not(modifiers & Qt::ShiftModifier))
-            text = text.toLower();
-        assert(text.length() == 1);
-        qWarning() << text;
-        text = "char-" + QString::number(text.at(0).unicode());
-        if (specialKeys.contains(keyEvent->key()))
-            text = specialKeys[keyEvent->key()];
-
-        // if (modifiers & Qt::ShiftModifier)
-        //     text = "s-" + text;
-        if (modifiers & Qt::MetaModifier)
-            text = "c-" + text;
-        if (modifiers & Qt::AltModifier)
-            text = "a-" + text;
-
-        text = '<' + text + '>';
-        qWarning() << text;
-        mNVim->api2()->nvim_input(text.toUtf8());
+        QString key = mInputConv->convertKey(keyEvent->text(), keyEvent->key(), modifiers);
+        qWarning() << key;
+        mNVim->api2()->nvim_input(mNVim->encode(key));
         return true;
     }
     else if (event->type() == QEvent::Shortcut) {
@@ -455,14 +390,14 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             }
         }
         else {
-            qWarning() << command << line;
+            /* qWarning() << command << line; */
         }
     }
 
     syncFromVim();
     if (mBusy)
         textEditor->setCursorWidth(0);
-    if (mMode == "insert")
+    else if (mMode == "insert")
         textEditor->setCursorWidth(1);
     else if (mMode == "normal")
         textEditor->setCursorWidth(11);

@@ -13,6 +13,7 @@ class IEditor;
 
 namespace NeovimQt {
 class NeovimConnector;
+class InputConv;
 }
 
 namespace QNVim {
@@ -53,6 +54,7 @@ private:
     bool mEnabled;
 
     NeovimQt::NeovimConnector *mNVim;
+    NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
     QMap<QString, Core::IEditor *> mEditors;
     QMap<QString, unsigned long long> mBuffers;
