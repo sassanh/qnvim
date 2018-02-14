@@ -201,6 +201,54 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
 
         Qt::KeyboardModifiers modifiers = QGuiApplication::keyboardModifiers();
         //        const Qt::KeyboardModifier controlKey = Utils::OsSpecificAspects::;
+        QHash<int, QString> specialKeys;
+        specialKeys.insert(Qt::Key_Up, "Up");
+        specialKeys.insert(Qt::Key_Down, "Down");
+        specialKeys.insert(Qt::Key_Left, "Left");
+        specialKeys.insert(Qt::Key_Right, "Right");
+
+        specialKeys.insert(Qt::Key_F1, "F1");
+        specialKeys.insert(Qt::Key_F2, "F2");
+        specialKeys.insert(Qt::Key_F3, "F3");
+        specialKeys.insert(Qt::Key_F4, "F4");
+        specialKeys.insert(Qt::Key_F5, "F5");
+        specialKeys.insert(Qt::Key_F6, "F6");
+        specialKeys.insert(Qt::Key_F7, "F7");
+        specialKeys.insert(Qt::Key_F8, "F8");
+        specialKeys.insert(Qt::Key_F9, "F9");
+        specialKeys.insert(Qt::Key_F10, "F10");
+        specialKeys.insert(Qt::Key_F11, "F11");
+        specialKeys.insert(Qt::Key_F12, "F12");
+        specialKeys.insert(Qt::Key_F13, "F13");
+        specialKeys.insert(Qt::Key_F14, "F14");
+        specialKeys.insert(Qt::Key_F15, "F15");
+        specialKeys.insert(Qt::Key_F16, "F16");
+        specialKeys.insert(Qt::Key_F17, "F17");
+        specialKeys.insert(Qt::Key_F18, "F18");
+        specialKeys.insert(Qt::Key_F19, "F19");
+        specialKeys.insert(Qt::Key_F20, "F20");
+        specialKeys.insert(Qt::Key_F21, "F21");
+        specialKeys.insert(Qt::Key_F22, "F22");
+        specialKeys.insert(Qt::Key_F23, "F23");
+        specialKeys.insert(Qt::Key_F24, "F24");
+
+        specialKeys.insert(Qt::Key_Backspace, "BS");
+        specialKeys.insert(Qt::Key_Delete, "Del");
+        specialKeys.insert(Qt::Key_Insert, "Insert");
+        specialKeys.insert(Qt::Key_Home, "Home");
+        specialKeys.insert(Qt::Key_End, "End");
+        specialKeys.insert(Qt::Key_PageUp, "PageUp");
+        specialKeys.insert(Qt::Key_PageDown, "PageDown");
+
+        specialKeys.insert(Qt::Key_Return, "Enter");
+        specialKeys.insert(Qt::Key_Enter, "Enter");
+        specialKeys.insert(Qt::Key_Tab, "Tab");
+        specialKeys.insert(Qt::Key_Backtab, "Tab");
+        specialKeys.insert(Qt::Key_Escape, "Esc");
+
+        specialKeys.insert(Qt::Key_Backslash, "Bslash");
+        specialKeys.insert(Qt::Key_Space, "Space");
+
         QString text = QChar(keyEvent->key());
         qWarning() << text << keyEvent->text() << keyEvent->key();
         if (not(modifiers & Qt::ShiftModifier))
@@ -208,10 +256,8 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
         assert(text.length() == 1);
         qWarning() << text;
         text = "char-" + QString::number(text.at(0).unicode());
-        if (keyEvent->key() == Qt::Key_Backspace)
-            text = "BS";
-        if (keyEvent->key() == Qt::Key_Delete)
-            text = "Del";
+        if (specialKeys.contains(keyEvent->key()))
+            text = specialKeys[keyEvent->key()];
 
         // if (modifiers & Qt::ShiftModifier)
         //     text = "s-" + text;
