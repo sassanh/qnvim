@@ -27,7 +27,7 @@ class QNVimPlugin : public ExtensionSystem::IPlugin
 public:
     QNVimPlugin();
     ~QNVimPlugin();
-    
+
     bool initialize(const QStringList &, QString *);
     bool initialize();
     void extensionsInitialized();
@@ -38,10 +38,10 @@ public:
 
 protected:
     QString filename(Core::IEditor * = NULL) const;
-    
+
     void fixSize(Core::IEditor * = NULL);
-    void syncToVim();
-    void syncFromVim();
+    void syncToVim(bool = false);
+    void syncFromVim(bool = false);
 
 private:
 
@@ -53,12 +53,14 @@ private:
 
     bool mEnabled;
 
+    QMutex mSyncMutex;
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
     QMap<QString, Core::IEditor *> mEditors;
     QMap<QString, unsigned long long> mBuffers;
 
+    QString mText;
     unsigned mWidth, mHeight;
     QColor mForegroundColor, mBackgroundColor, mSpecialColor;
     QColor mCursorColor;
