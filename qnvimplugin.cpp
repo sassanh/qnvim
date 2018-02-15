@@ -11,11 +11,13 @@
 #include <coreplugin/coreconstants.h>
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
+#include <texteditor/fontsettings.h>
 #include <utils/osspecificaspects.h>
 #include <gui/input.h>
 #include <neovimconnector.h>
 #include <msgpackrequest.h>
 
+#include <QtMath>
 #include <QTextEdit>
 #include <QApplication>
 #include <QGuiApplication>
@@ -29,8 +31,8 @@
 namespace QNVim {
 namespace Internal {
 
-QNVimPlugin::QNVimPlugin(): mEnabled(true), mNVim(NULL), mInputConv(new NeovimQt::InputConv),
-    mVimChanges(0), mWidth(80), mHeight(35),
+QNVimPlugin::QNVimPlugin(): mEnabled(true), mNVim(NULL),
+    mInputConv(new NeovimQt::InputConv), mVimChanges(0), mWidth(80), mHeight(35),
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
     mCursorColor(Qt::white), mBusy(false), mMouse(false), mUIMode("normal"), mMode("n")
 {
@@ -54,14 +56,12 @@ void QNVimPlugin::fixSize(Core::IEditor *editor) {
         editor = Core::EditorManager::currentEditor();
     if (not editor)
         return;
-//    unsigned desiredWidth = editor->widget()->width() / shellWidget(editor)->cellSize().width();
-//    unsigned desiredHeight = editor->widget()->height() / shellWidget(editor)->cellSize().height();
-//    unsigned width = shellWidget(editor)->columns();
-//    unsigned height = shellWidget(editor)->rows();
-//    if (width != desiredWidth or height != desiredHeight) {
-//        shellWidget(editor)->resize(editor->widget()->width(), editor->widget()->height());
-//        shellWidget(editor)->resizeShell(desiredHeight, desiredWidth);
-//    }
+    TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
+    unsigned width = qFloor(textEditor->width() / fm.averageCharWidth());
+    unsigned height = textEditor->height() / fm.lineSpacing();
+    if (width != mWidth or height != mHeight)
+        mNVim->api2()->nvim_ui_try_resize(width, height);
 }
 
 void QNVimPlugin::syncCursorToVim(Core::IEditor *editor, bool force) {
@@ -96,27 +96,64 @@ void QNVimPlugin::syncCursorToVim(Core::IEditor *editor, bool force) {
 }
 
 void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor, bool force) {
-    qWarning() << "TF";
-    return;
     if (not editor)
         editor = Core::EditorManager::currentEditor();
     if (not editor)
         return;
-    if (force)
-        mSyncMutex.lock();
-    else if (not mSyncMutex.tryLock())
-        return;
+    // qWarning() << "TRYING TO SYNC SELECTION TO NEOVIM";
+    // if (force)
+    //     mSyncMutex.lock();
+    // else if (not mSyncMutex.tryLock())
+    //     return;
+    // qWarning() << "SYNCING SELECTION TO NEOVIM";
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
-    unsigned cursorPosition = textEditor->textCursor().position();
-    int line = text.left(cursorPosition).count('\n') + 1;
-    int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
-    if (line == mCursor.y() && col == mCursor.x())
+    QTextCursor cursor = textEditor->hasBlockSelection() ? textEditor->blockSelection() : textEditor->textCursor();
+    unsigned cursorPosition = cursor.position();
+    unsigned anchorPosition = cursor.anchor();
+    unsigned line, col, vLine, vCol;
+    if (anchorPosition == cursorPosition)
+        return;
+    QString visualCommand;
+    if (textEditor->hasBlockSelection()) {
+        line = text.left(cursorPosition).count('\n') + 1;
+        col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
+        vLine = text.left(anchorPosition).count('\n') + 1;
+        vCol = text.left(anchorPosition).section('\n', -1).toUtf8().length() + 1;
+        if (vCol < col)
+            --col;
+        else if (vCol > col)
+            --vCol;
+        visualCommand = "\x16";
+    }
+    else if (mMode == "V") {
+        return;
+    }
+    else {
+        if (anchorPosition < cursorPosition)
+            --cursorPosition;
+        else
+            --anchorPosition;
+        line = text.left(cursorPosition).count('\n') + 1;
+        col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
+        vLine = text.left(anchorPosition).count('\n') + 1;
+        vCol = text.left(anchorPosition).section('\n', -1).toUtf8().length() + 1;
+        visualCommand = "v";
+    }
+    if (line == mCursor.y() && col == mCursor.x() && vLine == mVCursor.y() && vCol == mVCursor.x())
         return;
     mCursor.setY(line);
     mCursor.setX(col);
-    mNVim->api2()->nvim_command(QString("call setpos('.', [%1,%2,%3])").arg(mBuffers[filename(editor)]).
-            arg(line).arg(col).toUtf8());
+    mVCursor.setY(vLine);
+    mVCursor.setX(vCol);
+    connect(mNVim->api2()->nvim_command(
+                mNVim->encode(QString("normal! \x03%2G%3|%1%4G%5|").arg(visualCommand)
+                              .arg(vLine).arg(vCol).arg(line).arg(col))),
+            &NeovimQt::MsgpackRequest::finished, [=]() {
+    });
+
+    // mSyncMutex.unlock();
+    // qWarning() << "SELECTION SYNCED TO NEOVIM";
 }
 
 void QNVimPlugin::syncToVim(bool force, std::function<void()> callback) {
@@ -139,6 +176,7 @@ void QNVimPlugin::syncToVim(bool force, std::function<void()> callback) {
             // mSyncMutex.unlock();
             // qWarning() << "SYNCED TO NEOVIM";
             syncCursorToVim(editor, force);
+            fixSize();
             if (callback)
                 callback();
         });
@@ -203,7 +241,6 @@ void QNVimPlugin::syncFromVim(bool force) {
             // qWarning() << "SYNCED FROM NEOVIM";
             unsigned a = QString("\n" + mText).section('\n', 0, vLine - 1).length() + vCol - 1;
             unsigned p = QString("\n" + mText).section('\n', 0, line - 1).length() + col - 1;
-            qWarning() << mCursor << mVCursor;
             if (mMode == "V") {
                 if (a < p) {
                     a = QString("\n" + mText).section('\n', 0, vLine - 1).length();
@@ -213,32 +250,37 @@ void QNVimPlugin::syncFromVim(bool force) {
                     a = QString("\n" + mText).section('\n', 0, vLine).length() - 1;
                     p = QString("\n" + mText).section('\n', 0, line - 1).length();
                 }
+                cursor.setPosition(a);
+                cursor.setPosition(p, QTextCursor::KeepAnchor);
+                if (textEditor->textCursor().anchor() != cursor.anchor() ||
+                        textEditor->textCursor().position() != cursor.position())
+                    textEditor->setTextCursor(cursor);
             }
             else if (mMode == "v") {
-                if (a <= p)
-                    ++p;
-                else if (a > p)
+                if (a > p)
                     ++a;
+                else
+                    ++p;
+                cursor.setPosition(a);
+                cursor.setPosition(p, QTextCursor::KeepAnchor);
+                if (textEditor->textCursor().anchor() != cursor.anchor() ||
+                        textEditor->textCursor().position() != cursor.position())
+                    textEditor->setTextCursor(cursor);
             }
             else if (mMode == "\x16") {
                 if (vCol > col)
                     ++a;
                 else
                     ++p;
-            }
-
-            if (mVCursor != mCursor) {
                 cursor.setPosition(a);
                 cursor.setPosition(p, QTextCursor::KeepAnchor);
-            }
-            else {
-                cursor.setPosition(p);
-            }
-            if (mMode == "\x16") {
                 textEditor->setBlockSelection(cursor);
             }
             else {
-                textEditor->setTextCursor(cursor);
+                cursor.clearSelection();
+                cursor.setPosition(p);
+                if (textEditor->textCursor().position() != cursor.position() or textEditor->textCursor().hasSelection())
+                    textEditor->setTextCursor(cursor);
             }
         });
     });
@@ -277,8 +319,7 @@ bool QNVimPlugin::initialize()
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
                 this, &QNVimPlugin::handleNotification);
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
-                this, [=]() {syncFromVim();},
-                Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
+                this, [=]() {syncFromVim();});
 
         QVariantMap options;
         options.insert("ext_popupmenu", false);
@@ -323,10 +364,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
         return false;
     if (qobject_cast<QTextEdit *>(object) or qobject_cast<QPlainTextEdit *>(object)) {
         if (event->type() == QEvent::Resize) {
-            QResizeEvent *resizeEvent = static_cast<QResizeEvent *>(event);
-//            unsigned width = resizeEvent->size().width() / shellWidget()->cellSize().width();
-//            unsigned height = resizeEvent->size().height() / shellWidget()->cellSize().height();
-//            mNVim->api2()->nvim_ui_try_resize(width, height);
+            fixSize();
             return false;
         }
     }
@@ -433,6 +471,9 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
             syncCursorToVim(editor, true);
         }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
         connect(textEditor, &TextEditor::TextEditorWidget::selectionChanged, this, [=]() {
+            QString newText = textEditor->toPlainText();
+            if (newText != mText)
+                return;
             syncSelectionToVim(editor);
         }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
 
@@ -489,7 +530,6 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         }
         else if (command == "scroll") {
 //            const int scroll = -line.first().toList()[0].toString().toInt();
-//            qWarning() << mScrollRegion << scroll;
 //            for(signed i = scroll < 0 ? mScrollRegion.top() : mScrollRegion.bottom(); scroll < 0 ? i <= mScrollRegion.bottom() : i >= mScrollRegion.top(); scroll < 0 ? i++ : i--) {
 //                QString toScroll = mContent[i].mid(mScrollRegion.left(), mScrollRegion.left() + mScrollRegion.right());
 //                if ((scroll < 0 and i + scroll >= mScrollRegion.top()) or (scroll > 0 and i + scroll <= mScrollRegion.bottom()))
@@ -538,7 +578,6 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             }
         }
         else {
-            /* qWarning() << command << line; */
         }
     }
 
