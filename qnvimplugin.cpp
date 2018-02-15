@@ -215,7 +215,7 @@ void QNVimPlugin::syncFromVim(bool force) {
                 }
             }
             else if (mMode == "v") {
-                if (a < p)
+                if (a <= p)
                     ++p;
                 else if (a > p)
                     ++a;
@@ -544,7 +544,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
 
     if (mBusy)
         textEditor->setCursorWidth(0);
-    else if (mUIMode == "insert")
+    else if (mUIMode == "insert" or mUIMode == "visual")
         textEditor->setCursorWidth(1);
     else if (mUIMode == "normal" or mUIMode == "operator")
         textEditor->setCursorWidth(11);
