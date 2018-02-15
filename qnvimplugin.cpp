@@ -32,8 +32,7 @@ namespace Internal {
 QNVimPlugin::QNVimPlugin(): mEnabled(true), mNVim(NULL), mInputConv(new NeovimQt::InputConv),
     mVimChanges(0), mWidth(80), mHeight(35),
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
-    mCursorColor(Qt::white),
-    mBusy(false), mMouse(false)
+    mCursorColor(Qt::white), mBusy(false), mMouse(false), mMode("normal")
 {
 }
 
@@ -45,14 +44,16 @@ QNVimPlugin::~QNVimPlugin() {
 QString QNVimPlugin::filename(Core::IEditor *editor) const {
     if (not editor)
         editor = Core::EditorManager::currentEditor();
-    if (editor)
-        return editor->document()->filePath().toString();
-    return "";
+    if (not editor)
+        return "";
+    return editor->document()->filePath().toString();
 }
 
 void QNVimPlugin::fixSize(Core::IEditor *editor) {
     if (not editor)
         editor = Core::EditorManager::currentEditor();
+    if (not editor)
+        return;
 //    unsigned desiredWidth = editor->widget()->width() / shellWidget(editor)->cellSize().width();
 //    unsigned desiredHeight = editor->widget()->height() / shellWidget(editor)->cellSize().height();
 //    unsigned width = shellWidget(editor)->columns();
@@ -64,33 +65,46 @@ void QNVimPlugin::fixSize(Core::IEditor *editor) {
 }
 
 void QNVimPlugin::syncCursorToVim(Core::IEditor *editor, bool force) {
-    if (not mSyncMutex.tryLock()) {
-        if (force)
-            QTimer::singleShot(0, [=]() {syncCursorToVim(editor, force);});
-        return;
-    }
     if (not editor)
         editor = Core::EditorManager::currentEditor();
+    if (not editor)
+        return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (textEditor->textCursor().position() != textEditor->textCursor().anchor())
+        return;
     QString text = textEditor->toPlainText();
     unsigned cursorPosition = textEditor->textCursor().position();
     int line = text.left(cursorPosition).count('\n') + 1;
     int col = mNVim->encode(text.left(cursorPosition).section('\n', -1)).length() + 1;
     if (line == mCursor.y() && col == mCursor.x()) {
-        mSyncMutex.unlock();
         return;
     }
+    // qWarning() << "TRYING TO SYNC CURSOR TO NEOVIM";
+    // if (force)
+    //     mSyncMutex.lock();
+    // else if (not mSyncMutex.tryLock())
+    //     return;
+    // qWarning() << "SYNCING CURSOR TO NEOVIM";
     mCursor.setY(line);
     mCursor.setX(col);
-    connect(mNVim->api2()->nvim_command(mNVim->encode(QString("call cursor(%1,%2)").arg(line).arg(col))),
+    connect(mNVim->api2()->nvim_command(mNVim->encode(QString("call SetCursor(%1,%2)").arg(line).arg(col))),
             &NeovimQt::MsgpackRequest::finished, [=]() {
-        mSyncMutex.unlock();
+        // mSyncMutex.unlock();
+        // qWarning() << "CURSOR SYNCED TO NEOVIM";
     });
 }
 
-void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor, bool forec) {
+void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor, bool force) {
+    qWarning() << "TF";
+    return;
     if (not editor)
         editor = Core::EditorManager::currentEditor();
+    if (not editor)
+        return;
+    if (force)
+        mSyncMutex.lock();
+    else if (not mSyncMutex.tryLock())
+        return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
     unsigned cursorPosition = textEditor->textCursor().position();
@@ -104,13 +118,16 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor, bool forec) {
             arg(line).arg(col).toUtf8());
 }
 
-void QNVimPlugin::syncToVim(bool force) {
-    if (not mSyncMutex.tryLock()) {
-        if (force)
-            QTimer::singleShot(0, [=]() {syncToVim(force);});
-        return;
-    }
+void QNVimPlugin::syncToVim(bool force, std::function<void()> callback) {
     Core::IEditor *editor = Core::EditorManager::currentEditor();
+    if (not editor)
+        return;
+    // qWarning() << "TRYING TO SYNC TO NEOVIM";
+    // if (force)
+    //     mSyncMutex.lock();
+    // else if (not mSyncMutex.tryLock())
+    //     return;
+    // qWarning() << "SYNCING TO NEOVIM";
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
     QList<QByteArray> textLines = text.toUtf8().split('\n');
@@ -118,27 +135,36 @@ void QNVimPlugin::syncToVim(bool force) {
             &NeovimQt::MsgpackRequest::finished, [=]() {
         connect(mNVim->api2()->nvim_buf_set_lines(mBuffers[filename(editor)], 0, textLines.size(), false, textLines),
                 &NeovimQt::MsgpackRequest::finished, [=]() {
-            mSyncMutex.unlock();
+            // mSyncMutex.unlock();
+            // qWarning() << "SYNCED TO NEOVIM";
             syncCursorToVim(editor, force);
+            if (callback)
+                callback();
         });
     });
 }
 
 void QNVimPlugin::syncFromVim(bool force) {
-    if (not mSyncMutex.tryLock()) {
-        if (force)
-            QTimer::singleShot(0, [=]() {syncFromVim(force);});
-        return;
-    }
-    qWarning() << "SYNCING FROM VIM";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
+    if (not editor)
+        return;
+    if (not mInitialized[filename(editor)])
+        return;
+    // qWarning() << "TRYING TO SYNC FROM NEOVIM";
+    // if (force)
+    //     mSyncMutex.lock();
+    // else if (not mSyncMutex.tryLock())
+    //     return;
+    // qWarning() << "SYNCING FROM NEOVIM";
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     mNVim->api2()->nvim_command(QString("buffer %1").arg(mBuffers[filename(editor)]).toUtf8());
-    connect(mNVim->api2()->nvim_eval("[getpos('.'), &modified]"), &NeovimQt::MsgpackRequest::finished,
-            [=](quint32, quint64, const QVariant &v) {
-        QVariantList pos = v.toList()[0].toList().mid(1, 2);
-        qWarning() << pos;
+    connect(mNVim->api2()->nvim_eval("[mode(1), &modified, getpos('.'), getpos('v')]"),
+            &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
+        QString mode = v.toList()[0].toString();
+        qWarning() << mode;
         bool modified = v.toList()[1].toBool();
+        QVariantList pos = v.toList()[2].toList().mid(1, 2);
+        QVariantList vPos = v.toList()[3].toList().mid(1, 2);
         connect(mNVim->api2()->nvim_buf_get_lines(mBuffers[filename(editor)], 0, -1, true),
                 &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
             mText = "";
@@ -147,9 +173,7 @@ void QNVimPlugin::syncFromVim(bool force) {
             /* for (auto t: lines.toList()) */
             /*     mText += t.toByteArray() + '\n'; */
             mText.chop(1);
-//            textEditor->document()->findBlockByLineNumber
             QString oldText = textEditor->toPlainText();
-            /* textEditor->textDocument()->setContents(mText); */
             diff_match_patch differ;
             QList<Diff> diffs = differ.diff_main(oldText, mText);
             differ.diff_cleanupEfficiency(diffs);
@@ -168,9 +192,54 @@ void QNVimPlugin::syncFromVim(bool force) {
             col = mNVim->decode(mNVim->encode((mText).section('\n', line - 1, line - 1)).left(col - 1)).length() + 1;
             mCursor.setY(line);
             mCursor.setX(col);
-            qWarning() << 1 << line << col;
-            textEditor->setCursorPosition(QString("\n" + mText).section('\n', 0, line - 1).length() + col - 1);
-            mSyncMutex.unlock();
+
+            unsigned vLine = vPos[0].toULongLong();
+            unsigned vCol = vPos[1].toULongLong();
+            vCol = mNVim->decode(mNVim->encode((mText).section('\n', vLine - 1, vLine - 1)).left(vCol - 1)).length() + 1;
+            mVCursor.setY(vLine);
+            mVCursor.setX(vCol);
+
+            // mSyncMutex.unlock();
+            // qWarning() << "SYNCED FROM NEOVIM";
+            unsigned a = QString("\n" + mText).section('\n', 0, vLine - 1).length() + vCol - 1;
+            unsigned p = QString("\n" + mText).section('\n', 0, line - 1).length() + col - 1;
+            qWarning() << mCursor << mVCursor;
+            if (mode == "V") {
+                if (a < p) {
+                    a = QString("\n" + mText).section('\n', 0, vLine - 1).length();
+                    p = QString("\n" + mText).section('\n', 0, line).length() - 1;
+                }
+                else {
+                    a = QString("\n" + mText).section('\n', 0, vLine).length() - 1;
+                    p = QString("\n" + mText).section('\n', 0, line - 1).length();
+                }
+            }
+            else if (mode == "v") {
+                if (a <= p)
+                    ++p;
+                else
+                    ++a;
+            }
+            else if (mode == '\x16') {
+                if (vCol > col)
+                    ++a;
+                else
+                    ++p;
+            }
+
+            if (mVCursor != mCursor) {
+                cursor.setPosition(a);
+                cursor.setPosition(p, QTextCursor::KeepAnchor);
+            }
+            else {
+                cursor.setPosition(p);
+            }
+            if (mode == '\x16') {
+                textEditor->setBlockSelection(cursor);
+            }
+            else {
+                textEditor->setTextCursor(cursor);
+            }
         });
     });
 }
@@ -207,6 +276,9 @@ bool QNVimPlugin::initialize()
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
                 this, &QNVimPlugin::handleNotification);
+        connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
+                this, [=]() {syncFromVim();},
+                Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
 
         QVariantMap options;
         options.insert("ext_popupmenu", false);
@@ -262,10 +334,8 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         Qt::KeyboardModifiers modifiers = QGuiApplication::keyboardModifiers();
         QString key = mInputConv->convertKey(keyEvent->text(), keyEvent->key(), modifiers);
+        mNVim->api2()->nvim_input(mNVim->encode(key));
         qWarning() << key;
-        connect(mNVim->api2()->nvim_input(mNVim->encode(key)), &NeovimQt::MsgpackRequest::finished, [=]() {
-            syncFromVim();
-        });
         return true;
     }
     else if (event->type() == QEvent::Shortcut) {
@@ -281,14 +351,14 @@ void QNVimPlugin::toggleQNVim() {
     else {
         for(auto key: mEditors.keys()) {
             Core::IEditor *editor = mEditors[key];
-            if (!editor)
+            if (not editor)
                 continue;
 
             QWidget *widget = editor->widget();
-            if (!widget)
+            if (not widget)
                 continue;
 
-            if (!qobject_cast<QTextEdit *>(widget) and !qobject_cast<QPlainTextEdit *>(widget))
+            if (not qobject_cast<QTextEdit *>(widget) and not qobject_cast<QPlainTextEdit *>(widget))
                 continue;
 
             TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(widget);
@@ -302,6 +372,7 @@ void QNVimPlugin::toggleQNVim() {
 
 void QNVimPlugin::editorOpened(Core::IEditor *editor)
 {
+    mInitialized[filename(editor)] = false;
     if (not mEnabled)
         return;
 
@@ -327,54 +398,43 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
                     [=](quint32, quint64, const QVariant &v) {
                 mBuffers[filename(editor)] = v.toULongLong();
 
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", -1);
-                syncToVim();
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", -123456);
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", false);
-                mNVim->api2()->nvim_buf_set_name(mBuffers[filename(editor)], mNVim->encode(filename(editor)));
+                connect(mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite"),
+                        &NeovimQt::MsgpackRequest::finished, this, [=]() {
+                    connect(mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", -1),
+                            &NeovimQt::MsgpackRequest::finished, this, [=]() {
+                        syncToVim(true, [=]() {
+                            mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "undolevels", -123456);
+                            mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", false);
+                            mNVim->api2()->nvim_buf_set_name(mBuffers[filename(editor)], mNVim->encode(filename(editor)));
+                            mInitialized[filename(editor)] = true;
+                        });
+                    }, Qt::DirectConnection);
+                }, Qt::DirectConnection);
             });
         }
 
         mEditors[filename(editor)] = editor;
         Core::IDocument *document = editor->document();
-        connect(document, &Core::IDocument::changed, [=]() {
+        connect(document, &Core::IDocument::changed, this, [=]() {
             mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", document->isModified());
-        });
-        connect(document, &Core::IDocument::contentsChanged, [=]() {
+        }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
+        connect(document, &Core::IDocument::contentsChanged, this, [=]() {
+            if (not mInitialized[filename(editor)])
+                return;
             QString newText = textEditor->toPlainText();
             if (newText == mText)
                 return;
-
             syncToVim(true);
-            // diff_match_patch differ;
-            // QList<Diff> diffs = differ.diff_main(mText, newText);
-            // differ.diff_cleanupEfficiency(diffs);
-            // QList<Patch> patches = differ.patch_make(mText, diffs);
-            //
-            // QString command("let b:_pos=getpos('.')|");
-            // for (auto patch: patches) {
-            //     unsigned line = mText.left(patch.start1).count("\n") + 1;
-            //     unsigned col = mText.left(patch.start1).section("\n", -1).toUtf8().length();
-            //     unsigned sourceLength = mText.mid(patch.start1, patch.length1).toUtf8().length();
-            //     command += QString("call setpos('.',[%1,%2,%3])|call execute('normal! c%4l%5')|")
-            //         .arg(mBuffers[filename(editor)]).arg(line).arg(col)
-            //         .arg(sourceLength).arg(mText.mid(patch.start2, patch.length2));
-            // }
-            // command += "call setposs('.', b:_pos)|unlet b:_pos";
-            // qWarning() << command;
-            //
-            // mNVim->api2()->nvim_command(command.toUtf8());
-        });
-        connect(textEditor, &TextEditor::TextEditorWidget::cursorPositionChanged, [=]() {
+        }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
+        connect(textEditor, &TextEditor::TextEditorWidget::cursorPositionChanged, this, [=]() {
             QString newText = textEditor->toPlainText();
             if (newText != mText)
                 return;
-            syncCursorToVim(editor);
-        });
-        connect(textEditor, &TextEditor::TextEditorWidget::selectionChanged, [=]() {
+            syncCursorToVim(editor, true);
+        }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
+        connect(textEditor, &TextEditor::TextEditorWidget::selectionChanged, this, [=]() {
             syncSelectionToVim(editor);
-        });
+        }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
 
         fixSize(editor);
     }
@@ -391,19 +451,12 @@ void QNVimPlugin::editorAboutToClose(Core::IEditor *editor)
 
 void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList &args)
 {
-//    NeovimQt::MsgpackRequest *req = mNVim->api2()->nvim_eval("1+2");
-//    connect(req, &NeovimQt::MsgpackRequest::finished, [=](quint32 id, quint64 fun, const QVariant &v) {
-//        qWarning() << "HEY" << id << fun << v;
-//    });
-    if (name == "redraw") {
+    if (name == "redraw")
         redraw(args);
-    }
-    else
-        qWarning() << name << args;
 }
 
 void QNVimPlugin::redraw(const QVariantList &args) {
-    if (!Core::EditorManager::currentEditor())
+    if (not Core::EditorManager::currentEditor())
         return;
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());

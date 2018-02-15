@@ -42,7 +42,7 @@ protected:
     void fixSize(Core::IEditor * = NULL);
     void syncCursorToVim(Core::IEditor * = NULL, bool = false);
     void syncSelectionToVim(Core::IEditor * = NULL, bool = false);
-    void syncToVim(bool = false);
+    void syncToVim(bool = false, std::function<void()> = NULL);
     void syncFromVim(bool = false);
 
 private:
@@ -61,6 +61,7 @@ private:
     unsigned mVimChanges;
     QMap<QString, Core::IEditor *> mEditors;
     QMap<QString, unsigned long long> mBuffers;
+    QMap<QString, bool> mInitialized;
 
     QString mText;
     unsigned mWidth, mHeight;
@@ -69,7 +70,7 @@ private:
     bool mBusy;
     bool mMouse;
     QByteArray mMode;
-    QPoint mCursor;
+    QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;
 };
