@@ -69,7 +69,7 @@ private:
     QColor mCursorColor;
     bool mBusy;
     bool mMouse;
-    QByteArray mMode;
+    QByteArray mUIMode, mMode;
     QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;

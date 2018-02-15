@@ -32,7 +32,7 @@ namespace Internal {
 QNVimPlugin::QNVimPlugin(): mEnabled(true), mNVim(NULL), mInputConv(new NeovimQt::InputConv),
     mVimChanges(0), mWidth(80), mHeight(35),
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
-    mCursorColor(Qt::white), mBusy(false), mMouse(false), mMode("normal")
+    mCursorColor(Qt::white), mBusy(false), mMouse(false), mUIMode("normal"), mMode("n")
 {
 }
 
@@ -70,7 +70,8 @@ void QNVimPlugin::syncCursorToVim(Core::IEditor *editor, bool force) {
     if (not editor)
         return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
-    if (textEditor->textCursor().position() != textEditor->textCursor().anchor())
+    if (mMode == "v" or mMode == "V" or mMode == "\x16" or
+            textEditor->textCursor().position() != textEditor->textCursor().anchor())
         return;
     QString text = textEditor->toPlainText();
     unsigned cursorPosition = textEditor->textCursor().position();
@@ -160,8 +161,7 @@ void QNVimPlugin::syncFromVim(bool force) {
     mNVim->api2()->nvim_command(QString("buffer %1").arg(mBuffers[filename(editor)]).toUtf8());
     connect(mNVim->api2()->nvim_eval("[mode(1), &modified, getpos('.'), getpos('v')]"),
             &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
-        QString mode = v.toList()[0].toString();
-        qWarning() << mode;
+        mMode = v.toList()[0].toByteArray();
         bool modified = v.toList()[1].toBool();
         QVariantList pos = v.toList()[2].toList().mid(1, 2);
         QVariantList vPos = v.toList()[3].toList().mid(1, 2);
@@ -204,7 +204,7 @@ void QNVimPlugin::syncFromVim(bool force) {
             unsigned a = QString("\n" + mText).section('\n', 0, vLine - 1).length() + vCol - 1;
             unsigned p = QString("\n" + mText).section('\n', 0, line - 1).length() + col - 1;
             qWarning() << mCursor << mVCursor;
-            if (mode == "V") {
+            if (mMode == "V") {
                 if (a < p) {
                     a = QString("\n" + mText).section('\n', 0, vLine - 1).length();
                     p = QString("\n" + mText).section('\n', 0, line).length() - 1;
@@ -214,13 +214,13 @@ void QNVimPlugin::syncFromVim(bool force) {
                     p = QString("\n" + mText).section('\n', 0, line - 1).length();
                 }
             }
-            else if (mode == "v") {
-                if (a <= p)
+            else if (mMode == "v") {
+                if (a < p)
                     ++p;
-                else
+                else if (a > p)
                     ++a;
             }
-            else if (mode == '\x16') {
+            else if (mMode == "\x16") {
                 if (vCol > col)
                     ++a;
                 else
@@ -234,7 +234,7 @@ void QNVimPlugin::syncFromVim(bool force) {
             else {
                 cursor.setPosition(p);
             }
-            if (mode == '\x16') {
+            if (mMode == "\x16") {
                 textEditor->setBlockSelection(cursor);
             }
             else {
@@ -479,7 +479,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             // TODO
         }
         else if (command == "mode_change") {
-            mMode = line.first().toList().first().toByteArray();
+            mUIMode = line.first().toList().first().toByteArray();
         }
         else if (command == "set_scroll_region") {
             mScrollRegion.setTop(line.first().toList()[0].toString().toInt());
@@ -544,9 +544,9 @@ void QNVimPlugin::redraw(const QVariantList &args) {
 
     if (mBusy)
         textEditor->setCursorWidth(0);
-    else if (mMode == "insert")
+    else if (mUIMode == "insert")
         textEditor->setCursorWidth(1);
-    else if (mMode == "normal" or mMode == "operator")
+    else if (mUIMode == "normal" or mUIMode == "operator")
         textEditor->setCursorWidth(11);
 }
 
