@@ -7,6 +7,8 @@
 
 #include <extensionsystem/iplugin.h>
 
+class QLabel;
+
 namespace Core {
 class IEditor;
 }
@@ -56,6 +58,8 @@ private:
     bool mEnabled;
 
     QMutex mSyncMutex;
+
+    QLabel *mCMDLine;
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
@@ -67,8 +71,15 @@ private:
     unsigned mWidth, mHeight;
     QColor mForegroundColor, mBackgroundColor, mSpecialColor;
     QColor mCursorColor;
-    bool mBusy;
-    bool mMouse;
+    bool mBusy, mMouse;
+
+    bool mCMDLineVisible;
+    QString mCMDLineContent;
+    unsigned mCMDLinePos;
+    QChar mCMDLineFirstc;
+    QString mCMDLinePrompt;
+    unsigned mCMDLineIndent;
+
     QByteArray mUIMode, mMode;
     QPoint mCursor, mVCursor;
 
