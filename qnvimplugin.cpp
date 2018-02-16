@@ -629,15 +629,18 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         if (not mCMDLine) {
             mCMDLine = new QPlainTextEdit;
             Core::StatusBarManager::addStatusBarWidget(mCMDLine, Core::StatusBarManager::First);
-            mCMDLine->document()->setDocumentMargin(1);
+            mCMDLine->document()->setDocumentMargin(0);
+            mCMDLine->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            mCMDLine->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             mCMDLine->setLineWrapMode(QPlainTextEdit::NoWrap);
             mCMDLine->setMinimumWidth(200);
-            mCMDLine->setMinimumHeight(30);
             mCMDLine->setFocusPolicy(Qt::StrongFocus);
             mCMDLine->installEventFilter(this);
             mCMDLine->setFont(textEditor->textDocument()->fontSettings().font());
         }
+        QFontMetricsF fm(mCMDLine->font());
         mCMDLine->setPlainText(mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent);
+        mCMDLine->setMinimumWidth(qMax(200, qCeil(fm.width(mCMDLine->toPlainText())) + 10));
         mCMDLine->setFocus();
         QTextCursor cursor = mCMDLine->textCursor();
         cursor.setPosition(QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos);
