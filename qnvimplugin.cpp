@@ -319,7 +319,7 @@ bool QNVimPlugin::initialize()
     connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
             this, &QNVimPlugin::editorOpened);
 
-    mNVim = NeovimQt::NeovimConnector::spawn(QStringList() << "--cmd" << "autocmd VimEnter * set nowrap|set nonumber|set norelativenumber|set signcolumn=no",
+    mNVim = NeovimQt::NeovimConnector::spawn(QStringList() << "--cmd" << "autocmd VimEnter * set nowrap",
                                              "/usr/local/bin/nvim");
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         mNVim->api2()->nvim_command("function! SetCursor(line, col)\n\
