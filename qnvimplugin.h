@@ -7,7 +7,7 @@
 
 #include <extensionsystem/iplugin.h>
 
-class QLabel;
+class QPlainTextEdit;
 
 namespace Core {
 class IEditor;
@@ -59,7 +59,8 @@ private:
 
     QMutex mSyncMutex;
 
-    QLabel *mCMDLine;
+    QPlainTextEdit *mCMDLine;
+    QPlainTextEdit *mCMDLineCursor;
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;

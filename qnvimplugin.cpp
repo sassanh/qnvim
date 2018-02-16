@@ -37,7 +37,7 @@ namespace Internal {
 QNVimPlugin::QNVimPlugin(): mEnabled(true), mCMDLine(NULL), mNVim(NULL),
     mInputConv(new NeovimQt::InputConv), mVimChanges(0), mWidth(80), mHeight(35),
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
-    mCursorColor(Qt::white), mBusy(false), mCMDLineVisible(false), mMouse(false),
+    mCursorColor(Qt::white), mBusy(false), mMouse(false), mCMDLineVisible(false),
     mUIMode("normal"), mMode("n")
 {
 }
@@ -627,16 +627,28 @@ void QNVimPlugin::redraw(const QVariantList &args) {
 
     if (mCMDLineVisible) {
         if (not mCMDLine) {
-            mCMDLine = new QLabel;
+            mCMDLine = new QPlainTextEdit;
             Core::StatusBarManager::addStatusBarWidget(mCMDLine, Core::StatusBarManager::First);
+            mCMDLine->document()->setDocumentMargin(1);
+            mCMDLine->setLineWrapMode(QPlainTextEdit::NoWrap);
+            mCMDLine->setMinimumWidth(200);
+            mCMDLine->setMinimumHeight(30);
+            mCMDLine->setFocusPolicy(Qt::StrongFocus);
+            mCMDLine->installEventFilter(this);
+            mCMDLine->setFont(textEditor->textDocument()->fontSettings().font());
         }
-        mCMDLine->setMinimumWidth(200);
-        mCMDLine->installEventFilter(this);
-        mCMDLine->setFont(textEditor->textDocument()->fontSettings().font());
-        mCMDLine->setText(mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') +
-                          mCMDLineContent.left(mCMDLinePos) + '|' + mCMDLineContent.mid(mCMDLinePos));
+        mCMDLine->setPlainText(mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent);
+        mCMDLine->setFocus();
+        QTextCursor cursor = mCMDLine->textCursor();
+        cursor.setPosition(QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos);
+        mCMDLine->setTextCursor(cursor);
+        if (mUIMode == "cmdline_normal")
+            mCMDLine->setCursorWidth(1);
+        else if (mUIMode == "cmdline_insert")
+            mCMDLine->setCursorWidth(11);
     }
     else if (mCMDLine) {
+        textEditor->setFocus();
         Core::StatusBarManager::destroyStatusBarWidget(mCMDLine);
         mCMDLine = NULL;
     }
