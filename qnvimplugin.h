@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QPoint>
 #include <QRect>
+#include <QWidget>
 
 #include <extensionsystem/iplugin.h>
 
@@ -13,6 +14,10 @@ namespace Core {
 class IEditor;
 }
 
+namespace TextEditor {
+class TextEditorWidget;
+}
+
 namespace NeovimQt {
 class NeovimConnector;
 class InputConv;
@@ -20,6 +25,26 @@ class InputConv;
 
 namespace QNVim {
 namespace Internal {
+
+class NumbersColumn : public QWidget
+{
+    Q_OBJECT
+    bool mNumber;
+    TextEditor::TextEditorWidget *mEditor;
+
+public:
+    NumbersColumn();
+
+    void setEditor(TextEditor::TextEditorWidget *);
+    void setNumber(bool);
+
+protected:
+    void paintEvent(QPaintEvent *event);
+    bool eventFilter(QObject *, QEvent *);
+
+private:
+    void updateGeometry();
+};
 
 class QNVimPlugin : public ExtensionSystem::IPlugin
 {
@@ -44,10 +69,14 @@ protected:
     void fixSize(Core::IEditor * = NULL);
     void syncCursorToVim(Core::IEditor * = NULL, bool = false);
     void syncSelectionToVim(Core::IEditor * = NULL, bool = false);
-    void syncToVim(bool = false, std::function<void()> = NULL);
+    void syncModifiedToVim(Core::IEditor * = NULL);
+    void syncToVim(Core::IEditor * = NULL, bool = false, std::function<void()> = NULL);
     void syncFromVim(bool = false);
 
+    void triggerCommand(const QByteArray &);
+
 private:
+
 
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
@@ -60,7 +89,7 @@ private:
     QMutex mSyncMutex;
 
     QPlainTextEdit *mCMDLine;
-    QPlainTextEdit *mCMDLineCursor;
+    NumbersColumn *mNumbersColumn;
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
@@ -72,10 +101,10 @@ private:
     unsigned mWidth, mHeight;
     QColor mForegroundColor, mBackgroundColor, mSpecialColor;
     QColor mCursorColor;
-    bool mBusy, mMouse;
+    bool mBusy, mMouse, mNumber, mRelativeNumber, mWrap;
 
     bool mCMDLineVisible;
-    QString mCMDLineContent;
+    QString mCMDLineContent, mCMDLineDisplay;
     unsigned mCMDLinePos;
     QChar mCMDLineFirstc;
     QString mCMDLinePrompt;
