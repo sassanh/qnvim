@@ -156,7 +156,8 @@ void NumbersColumn::updateGeometry() {
 }
 
 QNVimPlugin::QNVimPlugin(): mEnabled(true), mCMDLine(NULL), mNumbersColumn(NULL), mNVim(NULL),
-    mInputConv(new NeovimQt::InputConv), mVimChanges(0), mWidth(80), mHeight(35),
+    mInputConv(new NeovimQt::InputConv), mVimChanges(0),
+    mText(""), mWidth(80), mHeight(35),
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
     mCursorColor(Qt::white), mBusy(false), mMouse(false),
     mNumber(true), mRelativeNumber(true), mWrap(false),
@@ -291,13 +292,32 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, bool force, std::function<voi
         return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
-    qWarning() << "SYNC";
+    unsigned cursorPosition = textEditor->textCursor().position();
+    int line = text.left(cursorPosition).count('\n') + 1;
+    int col = mNVim->encode(text.left(cursorPosition).section('\n', -1)).length() + 1;
+    qWarning() << "SYNC" << line << col;
 
-    QList<QByteArray> textLines = mNVim->encode(text).split('\n');
-    connect(mNVim->api0()->buffer_set_lines(mBuffers[filename(editor)], 0, -1, false, textLines),
+    diff_match_patch differ;
+    QList<Diff> diffs = differ.diff_main(mText, text);
+    differ.diff_cleanupEfficiency(diffs);
+    QList<Patch> patches = differ.patch_make(mText, diffs);
+
+    QPoint cursor = mCursor;
+    QString patchCommand = "set paste|call execute('normal! ";
+    std::reverse(std::begin(patches), std::end(patches));
+    for (auto patch: patches) {
+        int startLine = mText.left(patch.start1).count('\n') + 1;
+        int startCol = mNVim->encode(mText.left(patch.start1).section('\n', -1)).length() + 1;
+        int endLine = mText.left(patch.start1 + patch.length1 - 1).count('\n') + 1;
+        int endCol = mNVim->encode(mText.left(patch.start1 + patch.length1 - 1).section('\n', -1)).length() + 1;
+        patchCommand += QString("%1G%2|v%3G%4|c%5\x03").arg(startLine).arg(startCol).arg(endLine).arg(endCol).
+                arg(text.mid(patch.start2, patch.length2).replace("'", "''"));
+    }
+    patchCommand += QString("i\x07u\x03')|set nopaste|call cursor(%1,%2)\n").arg(line).arg(col);
+    mCursor.setY(line);
+    mCursor.setX(col);
+    connect(mNVim->api2()->nvim_command(mNVim->encode(patchCommand)),
             &NeovimQt::MsgpackRequest::finished, [=]() {
-        qWarning() << "SYNC 2";
-        syncCursorToVim(editor, force);
         if (callback)
             callback();
     });
@@ -311,8 +331,8 @@ void QNVimPlugin::syncFromVim(bool force) {
         return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     connect(mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1").arg(mBuffers[filename(editor)]))),
-            &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
-        connect(mNVim->api2()->nvim_eval("[bufnr(''), mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap]"),
+            &NeovimQt::MsgpackRequest::finished, [=]() {
+        connect(mNVim->api2()->nvim_eval("[bufnr(''), mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, execute('1messages')]"),
                 &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
             if (not mEditors.contains(filename(editor))) {
                 return;
@@ -329,13 +349,16 @@ void QNVimPlugin::syncFromVim(bool force) {
             mNumber = state[5].toBool();
             mRelativeNumber = state[6].toBool();
             mWrap = state[7].toBool();
-            // qWarning() << state[8];
-            // QString cmdLine = mNVim->decode(state[8].toByteArray());
-            // mCMDLineDisplay = cmdLine.isEmpty() ? mCMDLineDisplay : cmdLine;
-            // qWarning() << cmdLine << mCMDLineDisplay;
+            QString cmdLine = mNVim->decode(state[8].toByteArray()).mid(1);
+            if (not cmdline) {
+                mCMDLineDisplay = cmdLine;
+                if (not mCMDLineVisible)
+                    mCMDLine->setPlainText(mCMDLineDisplay);
+            }
             mNumbersColumn->setNumber(mNumber);
             mNumbersColumn->setEditor(mRelativeNumber ? textEditor : NULL);
-            textEditor->setWordWrapMode(mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap);
+            if (textEditor->wordWrapMode() != (mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap))
+                textEditor->setWordWrapMode(mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap);
             connect(mNVim->api2()->nvim_buf_get_lines(mBuffers[filename(editor)], 0, -1, true),
                     &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
                 if (not mEditors.contains(filename(editor))) {
@@ -352,25 +375,32 @@ void QNVimPlugin::syncFromVim(bool force) {
                 differ.diff_cleanupEfficiency(diffs);
                 QList<Patch> patches = differ.patch_make(oldText, diffs);
 
-                QTextCursor cursor = textEditor->textCursor();
-                cursor.beginEditBlock();
-                for (auto patch: patches) {
-                    cursor.setPosition(patch.start1);
-                    cursor.setPosition(patch.start1 + patch.length1, QTextCursor::KeepAnchor);
-                    cursor.insertText(mText.mid(patch.start2, patch.length2));
+                if (patches.size()) {
+                    QTextCursor cursor = textEditor->textCursor();
+                    cursor.beginEditBlock();
+                    for (auto patch: patches) {
+                        cursor.setPosition(patch.start1);
+                        cursor.setPosition(patch.start1 + patch.length1, QTextCursor::KeepAnchor);
+                        cursor.insertText(mText.mid(patch.start2, patch.length2));
+                    }
+                    cursor.endEditBlock();
                 }
 
-                textEditor->document()->setModified(modified);
+                if (textEditor->document()->isModified() != modified)
+                    textEditor->document()->setModified(modified);
                 unsigned line = pos[0].toULongLong();
                 unsigned col = pos[1].toULongLong();
                 col = mNVim->decode(mNVim->encode(mText.section('\n', line - 1, line - 1)).left(col - 1)).length() + 1;
-                mCursor.setY(line);
-                mCursor.setX(col);
-                mMode = mode;
 
                 unsigned vLine = vPos[0].toULongLong();
                 unsigned vCol = vPos[1].toULongLong();
                 vCol = mNVim->decode(mNVim->encode(mText.section('\n', vLine - 1, vLine - 1)).left(vCol)).length();
+
+                if (mCursor.y() == line and mCursor.x() == col and mVCursor.y() == vLine and mVCursor.x() == vCol and mMode == mode)
+                    return;
+                mMode = mode;
+                mCursor.setY(line);
+                mCursor.setX(col);
                 mVCursor.setY(vLine);
                 mVCursor.setX(vCol);
 
@@ -385,6 +415,7 @@ void QNVimPlugin::syncFromVim(bool force) {
                         a = QString("\n" + mText).section('\n', 0, vLine).length() - 1;
                         p = QString("\n" + mText).section('\n', 0, line - 1).length();
                     }
+                    QTextCursor cursor = textEditor->textCursor();
                     cursor.setPosition(a);
                     cursor.setPosition(p, QTextCursor::KeepAnchor);
                     if (textEditor->textCursor().anchor() != cursor.anchor() or
@@ -396,6 +427,7 @@ void QNVimPlugin::syncFromVim(bool force) {
                         ++a;
                     else
                         ++p;
+                    QTextCursor cursor = textEditor->textCursor();
                     cursor.setPosition(a);
                     cursor.setPosition(p, QTextCursor::KeepAnchor);
                     if (textEditor->textCursor().anchor() != cursor.anchor() or
@@ -407,17 +439,18 @@ void QNVimPlugin::syncFromVim(bool force) {
                         ++a;
                     else
                         ++p;
+                    QTextCursor cursor = textEditor->textCursor();
                     cursor.setPosition(a);
                     cursor.setPosition(p, QTextCursor::KeepAnchor);
                     textEditor->setBlockSelection(cursor);
                 }
                 else {
+                    QTextCursor cursor = textEditor->textCursor();
                     cursor.clearSelection();
                     cursor.setPosition(p);
                     if (textEditor->textCursor().position() != cursor.position() or textEditor->textCursor().hasSelection())
                         textEditor->setTextCursor(cursor);
                 }
-                cursor.endEditBlock();
             });
         });
     });
@@ -473,7 +506,7 @@ nnoremap <silent> <c-]> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor
 nnoremap <silent> <f4> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'CppTools.SwitchHeaderSource')<cr>\n\
 nnoremap <silent> <tab> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.GotoPreviousInHistory')<cr>\n\
 nnoremap <silent> <shift-tab> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.GotoPreviousInHistory')<cr>\n\
-inoremap <silent> <expr> <c-space> rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.CompleteThis') ? \"\" : \"\"\n\
+inoremap <silent> <expr> <c-space> rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.CompleteThis') ? '<left><right>' : '<left><right>'\"\n\
 \
 nnoremap <silent> <d-1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.Issues')<cr>\n\
 nnoremap <silent> <d-2> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.SearchResults')<cr>\n\
@@ -483,6 +516,8 @@ nnoremap <silent> <d-5> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.
 nnoremap <silent> <d-6> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.To-DoEntries')<cr>\n\
 nnoremap <silent> <d-7> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.GeneralMessages')<cr>\n\
 nnoremap <silent> <d-8> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.VersionControl')<cr>\n\
+\
+nnoremap <silent> <f1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'Help.Context')<cr>\n\
 \
 execute \"command Build :call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
 execute \"command BuildProject :call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
@@ -873,7 +908,7 @@ void QNVimPlugin::redraw(const QVariantList &args) {
     if (mCMDLineVisible) {
         QFontMetrics fm(mCMDLine->font());
         mCMDLine->setPlainText(mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent);
-        mCMDLine->setMinimumWidth(qMax(200, qCeil(fm.width(mCMDLine->toPlainText())) + 10));
+        mCMDLine->setMinimumWidth(qMax(200, qMin(qCeil(fm.width(mCMDLine->toPlainText())) + 10, 400)));
         mCMDLine->setFocus();
         QTextCursor cursor = mCMDLine->textCursor();
         cursor.setPosition(QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos);

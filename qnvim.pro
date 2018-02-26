@@ -7,8 +7,8 @@ SOURCES += qnvimplugin.cpp \
     ../qnvim/diff_match_patch.cpp
 
 HEADERS += qnvimplugin.h \
-        qnvim_global.h \
-        qnvimconstants.h \
+    qnvim_global.h \
+    qnvimconstants.h \
     diff_match_patch.h
 
 # Qt Creator linking
