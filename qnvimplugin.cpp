@@ -10,7 +10,6 @@
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/statusbarmanager.h>
-#include <coreplugin/locator/locatormanager.h>
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/fontsettings.h>
@@ -295,7 +294,7 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, bool force, std::function<voi
     unsigned cursorPosition = textEditor->textCursor().position();
     int line = text.left(cursorPosition).count('\n') + 1;
     int col = mNVim->encode(text.left(cursorPosition).section('\n', -1)).length() + 1;
-    qWarning() << "SYNC" << line << col;
+    qWarning() << "SYNC to vim";
 
     diff_match_patch differ;
     QList<Diff> diffs = differ.diff_main(mText, text);
@@ -330,6 +329,7 @@ void QNVimPlugin::syncFromVim(bool force) {
     QString filename = this->filename(editor);
     if (not mInitialized[filename])
         return;
+    qWarning() << "SYNC from vim";
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     connect(mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1").arg(mBuffers[filename]))),
             &NeovimQt::MsgpackRequest::finished, [=]() {
@@ -463,6 +463,10 @@ bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
     Q_UNUSED(arguments)
     Q_UNUSED(errorString)
 
+    return initialize();
+}
+
+bool QNVimPlugin::initialize() {
     mCMDLine = new QPlainTextEdit;
     Core::StatusBarManager::addStatusBarWidget(mCMDLine, Core::StatusBarManager::First);
     mCMDLine->document()->setDocumentMargin(0);
@@ -474,10 +478,8 @@ bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
     mCMDLine->installEventFilter(this);
     mCMDLine->setFont(TextEditor::TextEditorSettings::instance()->fontSettings().font());
 
-    return initialize();
-}
+    qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->hide();
 
-bool QNVimPlugin::initialize() {
     auto action = new QAction(tr("QNVim Action"), this);
     Core::Command *cmd = Core::ActionManager::registerAction(action, Constants::ACTION_ID,
                                                              Core::Context(Core::Constants::C_GLOBAL));
@@ -499,6 +501,7 @@ bool QNVimPlugin::initialize() {
             "/usr/local/bin/nvim");
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         mNVim->api2()->nvim_command(mNVim->encode(QString("\
+let g:neovim_channel=%1\n\
 nnoremap <silent> == :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.AutoIndentSelection')<cr>\n\
 vnoremap <silent> = :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.AutoIndentSelection')<cr>\n\
 nnoremap <silent> <c-]> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.FollowSymbolUnderCursor', 'TextEditor.JumpToFileUnderCursor')<cr>\n\
@@ -516,6 +519,14 @@ nnoremap <silent> <d-5> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.
 nnoremap <silent> <d-6> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.To-DoEntries')<cr>\n\
 nnoremap <silent> <d-7> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.GeneralMessages')<cr>\n\
 nnoremap <silent> <d-8> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.VersionControl')<cr>\n\
+\
+nnoremap <silent> <c-1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Welcome')<cr>\n\
+nnoremap <silent> <c-2> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Edit')<cr>\n\
+nnoremap <silent> <c-3> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Design')<cr>\n\
+nnoremap <silent> <c-4> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Mode.Debug')<cr>\n\
+nnoremap <silent> <c-5> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Project')<cr>\n\
+nnoremap <silent> <c-6> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Help')<cr>\n\
+nnoremap <silent> <c-7> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Welcome')<cr>\n\
 \
 nnoremap <silent> <f1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'Help.Context')<cr>\n\
 \
@@ -547,7 +558,8 @@ function! SetCursor(line, col)\n\
         normal! i\x07u\x03\n\
     endif\n\
     call cursor(a:line, a:col)\n\
-endfunction").arg(mNVim->channel())));
+endfunction\n\
+source ~/.qnvimrc").arg(mNVim->channel())));
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
                 this, &QNVimPlugin::handleNotification);
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
@@ -713,7 +725,11 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
     widget->installEventFilter(this);
     Core::IDocument *document = editor->document();
 
-    // connect(document, &Core::IDocument::changed, this, [=]() {syncModifiedToVim(editor);},
+    // connect(document, &Core::IDocument::changed, this, [=]() {
+    //         if (not document->isModified() and )
+    //         qWarning() << document->isModified();
+    //         mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "modified", document->isModified());
+    //         },
     //         Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
     connect(document, &Core::IDocument::contentsChanged, this, [=]() {
         if (not mInitialized[filename(editor)])
@@ -934,29 +950,47 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         }
     }
 
-    if (mBusy)
-        textEditor->setCursorWidth(0);
-    else if (mUIMode == "insert" or mUIMode == "visual")
-        textEditor->setCursorWidth(1);
-    else if (mUIMode == "normal" or mUIMode == "operator")
-        textEditor->setCursorWidth(11);
+    if (mBusy) {
+        if (textEditor->cursorWidth() != 0)
+            textEditor->setCursorWidth(0);
+    }
+    else if (mUIMode == "insert" or mUIMode == "visual") {
+        if (textEditor->cursorWidth() != 1)
+            textEditor->setCursorWidth(1);
+    }
+    else if (mUIMode == "normal" or mUIMode == "operator") {
+        if (textEditor->cursorWidth() != 11)
+            textEditor->setCursorWidth(11);
+    }
 
     if (mCMDLineVisible) {
         QFontMetrics fm(mCMDLine->font());
-        mCMDLine->setPlainText(mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent);
-        mCMDLine->setMinimumWidth(qMax(200, qMin(qCeil(fm.width(mCMDLine->toPlainText())) + 10, 400)));
-        mCMDLine->setFocus();
+        QString text = mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent;
+        if (mCMDLine->toPlainText() != text)
+            mCMDLine->setPlainText(text);
+        if (mCMDLine->minimumWidth() != qMax(200, qMin(qCeil(fm.width(mCMDLine->toPlainText())) + 10, 400)))
+            mCMDLine->setMinimumWidth(qMax(200, qMin(qCeil(fm.width(mCMDLine->toPlainText())) + 10, 400)));
+        if (not mCMDLine->hasFocus())
+            mCMDLine->setFocus();
         QTextCursor cursor = mCMDLine->textCursor();
-        cursor.setPosition(QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos);
-        mCMDLine->setTextCursor(cursor);
-        if (mUIMode == "cmdline_normal")
-            mCMDLine->setCursorWidth(1);
-        else if (mUIMode == "cmdline_insert")
-            mCMDLine->setCursorWidth(11);
+        if (cursor.position() != (QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos)) {
+            cursor.setPosition(QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos);
+            mCMDLine->setTextCursor(cursor);
+        }
+        if (mUIMode == "cmdline_normal") {
+            if (mCMDLine->cursorWidth() != 1)
+                mCMDLine->setCursorWidth(1);
+        }
+        else if (mUIMode == "cmdline_insert") {
+            if (mCMDLine->cursorWidth() != 11)
+                mCMDLine->setCursorWidth(11);
+        }
     }
     else {
-        mCMDLine->setPlainText(mCMDLineDisplay);
-        textEditor->setFocus();
+        if (mCMDLine->toPlainText() != mCMDLineDisplay)
+            mCMDLine->setPlainText(mCMDLineDisplay);
+        if (mCMDLine->hasFocus())
+            textEditor->setFocus();
     }
 }
 

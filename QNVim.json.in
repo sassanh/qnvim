@@ -1,8 +1,8 @@
 {
     \"Name\" : \"QNVim\",
-    \"Version\" : \"0.0.1\",
-    \"CompatVersion\" : \"0.0.1\",
-    \"Vendor\" : \"Sassan\",
+    \"Version\" : \"0.1.0\",
+    \"CompatVersion\" : \"0.1.0\",
+    \"Vendor\" : \"Sassan Haradji\",
     \"Copyright\" : \"(C) Sassan Haradji\",
     \"License\" : \"MIT\",
     \"Description\" : \"NeoVim Backend for QtCreator\",
