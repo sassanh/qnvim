@@ -5,6 +5,7 @@
 #include <QPoint>
 #include <QRect>
 #include <QWidget>
+#include <QMutex>
 
 #include <extensionsystem/iplugin.h>
 
