@@ -1,5 +1,10 @@
-# qnvim
-Neovim backend for Qt Creator
+# What's qnvim
+This project helps those who are used to editing text in vim and also need Qt Creator features to build their software.
+
+It runs an instance of Neovim inside Qt Creator, it runs your `init.vim`, all my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that relate on openning new temporary buffers. (such as fzf, ctrlp, gundo, tagbar, etc, I hope qnvim can handle temporary buffers in future too, but probably not in the near future.)
+
+
+
 
 # Install Instructions
 1. Build Qt Creator from git repository (https://wiki.qt.io/Building_Qt_Creator_from_Git)
