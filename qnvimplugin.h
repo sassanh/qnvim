@@ -72,13 +72,15 @@ protected:
     void syncSelectionToVim(Core::IEditor * = NULL, bool = false);
     void syncModifiedToVim(Core::IEditor * = NULL);
     void syncToVim(Core::IEditor * = NULL, bool = false, std::function<void()> = NULL);
+    void syncCursorFromVim(const QVariantList &, const QVariantList &, QByteArray mode);
     void syncFromVim(bool = false);
 
     void triggerCommand(const QByteArray &);
 
+private slots:
+    void openCounterDecrementer();
+
 private:
-
-
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
 
@@ -97,6 +99,7 @@ private:
     QMap<QString, Core::IEditor *> mEditors;
     QMap<QString, unsigned long long> mBuffers;
     QMap<QString, bool> mInitialized;
+    QMap<QString, bool> mChangedTicks;
 
     QString mText;
     unsigned mWidth, mHeight;
@@ -115,6 +118,7 @@ private:
     QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;
+    unsigned mOpenCounter;
 };
 
 } // namespace Internal
