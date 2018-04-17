@@ -4,7 +4,15 @@ This project helps those who are used to editing text in vim and also need Qt Cr
 It runs an instance of Neovim inside Qt Creator, it runs your `init.vim`, all my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that relate on openning new temporary buffers. (such as fzf, ctrlp, gundo, tagbar, etc, I hope qnvim can handle temporary buffers in future too, but probably not in the near future.)
 
 
+# Status
+It's still in alpha. Currently these are the known issues:
+1. As mentioned above it can't show temporary buffers (help windows and buffers used in plugins such as fzf, ctrlp, tagbar, etc)
+2. `wrap` doesn't work alright.
+3. There's a minor issue in `relativenumber` when used with `number` (I tried to use the code from FakeVIM for this part, but it's not stable yet, as far as I remember it was alright in macOS but not in Ubuntu.)
+4. After hours of working Qt Creator MAY crash. (sometimes I use it for days without crashing.)
+5. After hours of working Neovim instance may stop and you have to restart Qt Creator (againt sometimes I use it for days without any problems, it may be related to my custom build of neovim and may not happen for you.)
 
+But over all it's stable, I happily code in it without any pain. Please let me know if you find any problems and please contribute to this project if you have the time.
 
 # Install Instructions
 1. Build Qt Creator from git repository (https://wiki.qt.io/Building_Qt_Creator_from_Git)
@@ -37,29 +45,29 @@ In the Qt Creator go to `Projects` Tab/Mode (you can select it in the right colu
 
 8. (Optional) Put the built library in the location that Qt Creator expects plugins (it varies based on your OS) and use the built Qt Creator instead of the official version. (Or if you checked out the tag that corresponds to your installed Qt Creator, then you can use your own installed Qt Creator.)
 
-## Credits
+# Credits
 
-### Neovim
+## Neovim
 The lovely text editor that solves the problem of writing AND editing text once for ever.
 
 https://neovim.io
 https://github.com/neovim/neovim
 
-### Qt
+## Qt
 The lovely cross platform framework that lets you build awesome software with its full stack of tools from networking to ui controls to 2d/3d graphics and many others.
 
 https://wwww.qt.io
 
-### Qt Creator
+## Qt Creator
 The lovely IDE that lets you use the full power of Qt in an user friendly environemnt (I rememeber days that Qt Creator didn't exist and to code with Qt you had to use Eclipse or bare terminal and it was like a nightmare, Qt Creator eased the programming with Qt a lot.)
 
 https://www.qt.io/qt-features-libraries-apis-tools-and-ide/#ide
 https://en.wikipedia.org/wiki/Qt_Creator
 
 
-### Neovim Qt
+## Neovim Qt
 The C++ binding for neovim's msgpack communication layer.
 
 https://github.com/equalsraf/neovim-qt
 
-### And lots of other libraries that are used in above projects
+## And lots of other libraries that are used in above projects
