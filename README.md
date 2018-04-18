@@ -8,8 +8,6 @@ It's still in alpha. Currently these are the known issues:
 1. It can't show not-normal buffers (buffer types like help, terminal, quickfix, etc, plugins such as fzf, ctrlp, gundo, tagbar, etc)
 2. `wrap` doesn't work alright.
 3. There's a minor issue in `relativenumber` when used with `number` (I tried to use the code from FakeVIM for this part, but it's not stable yet, as far as I remember it was alright in macOS but not in Ubuntu.)
-4. After hours of working Qt Creator MAY crash. (sometimes I use it for days without crashing.)
-5. After hours of working Neovim instance may stop and you have to restart Qt Creator (againt sometimes I use it for days without any problems, it may be related to my custom build of neovim and may not happen for you.)
 
 All my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that rely on not-normal buffers. (I hope qnvim can handle all types of buffers in future, but probably not in the near future.)
 
