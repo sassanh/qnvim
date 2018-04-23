@@ -69,4 +69,4 @@ The C++ binding for neovim's msgpack communication layer.
 
 https://github.com/equalsraf/neovim-qt
 
-## And lots of other libraries that are used in above projects and are mentioned in their docs
+#### And lots of other libraries that are used in above projects and are mentioned in their docs
