@@ -38,7 +38,7 @@ LIBS += -L/home_direcotry/packages/neovim-qt/build/lib -lneovim-qt -lneovim-qt-g
 ```
 
 6. Setup locations to your Qt Creator build in Projects tab.
-In the Qt Creator go to `Projects` Tab/Mode (you can select it in the right column) Active project should be `qnvim`, and in Build & Run `Desktop ...` should be selected. Under `Desktop ...` select `Run` and in the right side in the `Run` section set Executable to `<full path to>/qt-creator-build/bin/qtcreator` and working directory to `<full path to>/qt-creator-build/bin`
+In the Qt Creator go to `Projects` Tab/Mode (you can select it in the left column) Active project should be `qnvim`, and in Build & Run `Desktop ...` should be selected. Under `Desktop ...` select `Run` and in the right side in the `Run` section set Executable to `<full path to>/qt-creator-build/bin/qtcreator` and working directory to `<full path to>/qt-creator-build/bin`
 
 7. Build and run the project.
 
