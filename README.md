@@ -5,11 +5,11 @@ It runs an instance of Neovim inside Qt Creator, so it's able to run your `init.
 
 # Status
 It's still in alpha. Currently these are the known issues:
-1. It can't show not-normal buffers (buffer types like help, terminal, quickfix, etc, plugins such as fzf, ctrlp, gundo, tagbar, etc)
+1. It can't show special buffers (buffer types like help, terminal, quickfix, etc, plugins such as fzf, ctrlp, gundo, tagbar, etc)
 2. `wrap` doesn't work alright.
 3. There's a minor issue in `relativenumber` when used with `number` (I tried to use the code from FakeVIM for this part, but it's not stable yet, as far as I remember it was alright in macOS but not in Ubuntu.)
 
-All my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that rely on not-normal buffers. (I hope qnvim can handle all types of buffers in future, but probably not in the near future.)
+All my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that rely on special buffers. (I hope qnvim can handle all types of buffers in future, but probably not in the near future.)
 
 But over all it's stable, I happily code in it without any pain. Please let me know if you find any problems and please contribute to this project if you have the time.
 
