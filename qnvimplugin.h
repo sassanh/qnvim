@@ -47,8 +47,7 @@ private:
     void updateGeometry();
 };
 
-class QNVimPlugin : public ExtensionSystem::IPlugin
-{
+class QNVimPlugin : public ExtensionSystem::IPlugin {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "QNVim.json")
 
@@ -65,15 +64,15 @@ public:
     void toggleQNVim();
 
 protected:
-    QString filename(Core::IEditor * = NULL) const;
+    QString filename(Core::IEditor * = nullptr) const;
 
-    void fixSize(Core::IEditor * = NULL);
-    void syncCursorToVim(Core::IEditor * = NULL, bool = false);
-    void syncSelectionToVim(Core::IEditor * = NULL, bool = false);
-    void syncModifiedToVim(Core::IEditor * = NULL);
-    void syncToVim(Core::IEditor * = NULL, bool = false, std::function<void()> = NULL);
+    void fixSize(Core::IEditor * = nullptr);
+    void syncCursorToVim(Core::IEditor * = nullptr);
+    void syncSelectionToVim(Core::IEditor * = nullptr);
+    void syncModifiedToVim(Core::IEditor * = nullptr);
+    void syncToVim(Core::IEditor * = nullptr, std::function<void()> = nullptr);
     void syncCursorFromVim(const QVariantList &, const QVariantList &, QByteArray mode);
-    void syncFromVim(bool = false);
+    void syncFromVim();
 
     void triggerCommand(const QByteArray &);
 
@@ -97,22 +96,22 @@ private:
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
     QMap<QString, Core::IEditor *> mEditors;
-    QMap<QString, unsigned long long> mBuffers;
+    QMap<QString, long> mBuffers;
     QMap<QString, bool> mInitialized;
     QMap<QString, bool> mChangedTicks;
 
     QString mText;
-    unsigned mWidth, mHeight;
+    int mWidth, mHeight;
     QColor mForegroundColor, mBackgroundColor, mSpecialColor;
     QColor mCursorColor;
     bool mBusy, mMouse, mNumber, mRelativeNumber, mWrap;
 
     bool mCMDLineVisible;
     QString mCMDLineContent, mCMDLineDisplay;
-    unsigned mCMDLinePos;
+    int mCMDLinePos;
     QChar mCMDLineFirstc;
     QString mCMDLinePrompt;
-    unsigned mCMDLineIndent;
+    int mCMDLineIndent;
 
     QByteArray mUIMode, mMode;
     QPoint mCursor, mVCursor;
