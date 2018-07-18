@@ -731,7 +731,6 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
                 mBuffers[filename(editor)] = v.toList()[1].toInt();
                 qWarning() << "B" << mBuffers[filename(editor)];
                 mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
-                syncToVim(editor);
             });
         }
     }
