@@ -55,12 +55,13 @@ https://github.com/neovim/neovim
 ## Qt
 The lovely cross platform framework that lets you build awesome software with its full stack of tools from networking to ui controls to 2d/3d graphics and many others.
 
-https://wwww.qt.io
+https://www.qt.io
 
 ## Qt Creator
 The lovely IDE that lets you use the full power of Qt in an user friendly environemnt (I rememeber days that Qt Creator didn't exist and to code with Qt you had to use Eclipse or bare terminal and it was like a nightmare, Qt Creator eased the programming with Qt a lot.)
 
 https://www.qt.io/qt-features-libraries-apis-tools-and-ide/#ide
+
 https://en.wikipedia.org/wiki/Qt_Creator
 
 
