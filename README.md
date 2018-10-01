@@ -44,6 +44,9 @@ In the Qt Creator go to `Projects` Tab/Mode (you can select it in the left colum
 
 8. (Optional) Put the built library in the location that Qt Creator expects plugins (it varies based on your OS) and use the built Qt Creator instead of the official version. (Or if you checked out the tag that corresponds to your installed Qt Creator, then you can use your own installed Qt Creator.)
 
+# Sample `.qnvimrc`
+There's a sample `.qnvimrc` file available in the repo, it provides most of the convenient keyboard shortcuts for building, deplying, running, switching buffers, switching tabs, etc. It'll also helps you understand how you can create new keyboard shortcuts using Qt Creator commands.
+
 # Credits
 
 ## Neovim

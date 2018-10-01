@@ -517,34 +517,6 @@ bool QNVimPlugin::initialize() {
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         mNVim->api2()->nvim_command(mNVim->encode(QString("\
 let g:neovim_channel=%1\n\
-nnoremap <silent> == :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.AutoIndentSelection')<cr>\n\
-vnoremap <silent> = :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.AutoIndentSelection')<cr>\n\
-nnoremap <silent> <c-]> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.FollowSymbolUnderCursor', 'TextEditor.JumpToFileUnderCursor')<cr>\n\
-nnoremap <silent> <f4> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'CppTools.SwitchHeaderSource')<cr>\n\
-nnoremap <silent> <d-w> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Close', 'TextEditor.JumpToFileUnderCursor')<cr>\n\
-nnoremap <silent> <c-tab> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.GotoPreviousInHistory')<cr>\n\
-nnoremap <silent> <c-s-tab> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.GotoPreviousInHistory')<cr>\n\
-inoremap <silent> <expr> <c-space> rpcnotify(%1, 'Gui', 'triggerCommand', 'TextEditor.CompleteThis') ? '<c-o><esc>' : '<c-o><esc>'\"\n\
-\
-nnoremap <silent> <d-1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.Issues')<cr>\n\
-nnoremap <silent> <d-2> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.SearchResults')<cr>\n\
-nnoremap <silent> <d-3> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.ApplicationOutput')<cr>\n\
-nnoremap <silent> <d-4> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.CompileOutput')<cr>\n\
-nnoremap <silent> <d-5> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.DebuggerConsole')<cr>\n\
-nnoremap <silent> <d-6> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.To-DoEntries')<cr>\n\
-nnoremap <silent> <d-7> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.GeneralMessages')<cr>\n\
-nnoremap <silent> <d-8> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Pane.VersionControl')<cr>\n\
-\
-nnoremap <silent> <c-1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Welcome')<cr>\n\
-nnoremap <silent> <c-2> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Edit')<cr>\n\
-nnoremap <silent> <c-3> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Design')<cr>\n\
-nnoremap <silent> <c-4> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Mode.Debug')<cr>\n\
-nnoremap <silent> <c-5> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Project')<cr>\n\
-nnoremap <silent> <c-6> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Help')<cr>\n\
-nnoremap <silent> <c-7> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'QtCreator.Mode.Welcome')<cr>\n\
-\
-nnoremap <silent> <f1> :call rpcnotify(%1, 'Gui', 'triggerCommand', 'Help.Context')<cr>\n\
-\
 execute \"command -bar Build call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
 execute \"command -bar BuildProject call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
 execute \"command -bar BuildAll call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.BuildSession')\"\n\
