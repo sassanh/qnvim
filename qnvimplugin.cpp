@@ -21,20 +21,20 @@
 #include <msgpackrequest.h>
 #include <utils/fancylineedit.h>
 
-#include <QScrollBar>
-#include <QThread>
-#include <QLabel>
-#include <QtMath>
-#include <QTextEdit>
+#include <QAction>
 #include <QApplication>
 #include <QGuiApplication>
-#include <QPlainTextEdit>
-#include <QTextBlock>
-#include <QAction>
-#include <QMessageBox>
+#include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
+#include <QPlainTextEdit>
+#include <QScrollBar>
+#include <QTextBlock>
+#include <QTextEdit>
+#include <QThread>
+#include <QtMath>
 
 namespace QNVim {
 namespace Internal {
@@ -299,20 +299,18 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
     qWarning() << "SYNC to vim";
 
     diff_match_patch differ;
-    QList<Diff> diffs = differ.diff_main(mText, text);
-    differ.diff_cleanupEfficiency(diffs);
-    QList<Patch> patches = differ.patch_make(mText, diffs);
+    QList<Patch> patches = differ.patch_make(mText, text);
     mCursor.setY(line);
     mCursor.setX(col);
 
     if (patches.count()) {
         QString patchCommand = "set paste|call execute('normal! ";
-        std::reverse(std::begin(patches), std::end(patches));
         for (auto patch: patches) {
             int startLine = mText.left(patch.start1).count('\n') + 1;
             int startCol = mNVim->encode(mText.left(patch.start1).section('\n', -1)).length() + 1;
             int endLine = mText.left(patch.start1 + patch.length1 - 1).count('\n') + 1;
             int endCol = mNVim->encode(mText.left(patch.start1 + patch.length1 - 1).section('\n', -1)).length() + 1;
+            mText.replace(patch.start1, patch.length1, text.mid(patch.start2, patch.length2));
             patchCommand += QString("G$v%1G%2|o%3G%4|c%5\x03").arg(startLine).arg(startCol).arg(endLine).arg(endCol).
                     arg(text.mid(patch.start2, patch.length2).replace("'", "''"));
         }
