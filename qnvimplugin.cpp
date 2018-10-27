@@ -189,7 +189,6 @@ void QNVimPlugin::fixSize(Core::IEditor *editor) {
     QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
     int width = qFloor((textEditor->width() - textEditor->extraArea()->width()) / fm.width('A')) + 2;
     int height = qFloor(textEditor->height() / fm.lineSpacing());
-    qWarning() << width << height;
     if (width != mWidth or height != mHeight)
         mNVim->api2()->nvim_ui_try_resize(width, height);
 }
@@ -230,12 +229,6 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
         editor = Core::EditorManager::currentEditor();
     if (not editor or not mEditors.contains(filename(editor)))
         return;
-    // qWarning() << "TRYING TO SYNC SELECTION TO NEOVIM";
-    // if (force)
-    //     mSyncMutex.lock();
-    // else if (not mSyncMutex.tryLock())
-    //     return;
-    // qWarning() << "SYNCING SELECTION TO NEOVIM";
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
     QTextCursor cursor = textEditor->hasBlockSelection() ? textEditor->blockSelection() : textEditor->textCursor();
@@ -281,9 +274,6 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
                               .arg(vLine).arg(vCol).arg(line).arg(col))),
             &NeovimQt::MsgpackRequest::finished, [=]() {
     });
-
-    // mSyncMutex.unlock();
-    // qWarning() << "SELECTION SYNCED TO NEOVIM";
 }
 
 void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callback) {
@@ -394,7 +384,7 @@ void QNVimPlugin::syncFromVim() {
     if (not editor or not mEditors.contains(filename(editor)))
         return;
     QString filename = this->filename(editor);
-    qWarning() << mInitialized[filename];
+    qWarning() << mInitialized[filename] << filename;
     if (not mInitialized[filename])
         return;
     qWarning() << "SYNC from vim";
@@ -445,9 +435,7 @@ void QNVimPlugin::syncFromVim() {
                 mText.chop(1);
                 QString oldText = textEditor->toPlainText();
                 diff_match_patch differ;
-                QList<Diff> diffs = differ.diff_main(oldText, mText);
-                differ.diff_cleanupEfficiency(diffs);
-                QList<Patch> patches = differ.patch_make(oldText, diffs);
+                QList<Patch> patches = differ.patch_make(oldText, mText);
 
                 if (patches.size()) {
                     QTextCursor cursor = textEditor->textCursor();
@@ -697,12 +685,18 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
     else {
         mEditors[filename(editor)] = editor;
         if (mNVim and mNVim->isReady()) {
-            connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('e %1'), bufnr('$')]").arg(filename(editor)))),
-                    &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
-                mBuffers[filename(editor)] = v.toList()[1].toInt();
-                qWarning() << "B" << mBuffers[filename(editor)];
+            if (mBuffers.contains(filename(editor))) {
+                qWarning() << "B2" << mBuffers[filename(editor)];
                 mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
-            });
+            }
+            else {
+                connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('e %1'), bufnr('$')]").arg(filename(editor)))),
+                        &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
+                    mBuffers[filename(editor)] = v.toList()[1].toInt();
+                    qWarning() << "B" << mBuffers[filename(editor)];
+                    mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
+                });
+            }
         }
     }
 
@@ -724,10 +718,6 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
         if (Core::EditorManager::currentEditor() != editor)
             return;
         QString newText = textEditor->toPlainText();
-        if (newText.length() < 200 && mText.length() < 200) {
-            qWarning() << newText;
-            qWarning() << mText;
-        }
         if (newText == mText)
             return;
         syncToVim(editor);
@@ -821,6 +811,9 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                         });
                     }, Qt::DirectConnection);
                 }
+                else {
+                    mBuffers[filename] = buffer;
+                }
             }
             else if (cmd == "BufEnter") {
                 if (filename != editor->document()->filePath().toString()) {
@@ -840,8 +833,6 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                 }
             }
             else if (cmd == "BufDelete") {
-                qWarning() << filename;
-                qWarning() << mEditors[filename];
                 if (mEditors.contains(filename) and mEditors[filename])
                     Core::EditorManager::closeEditor(mEditors[filename]);
             }
