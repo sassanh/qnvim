@@ -83,6 +83,7 @@ private:
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
 
+    void initializeBuffer(long, QString);
     void handleNotification(const QByteArray &, const QVariantList &);
     void redraw(const QVariantList &);
 

@@ -677,24 +677,30 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
         return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
 
-    if (mEditors.contains(filename(editor))) {
-        mInitialized[filename(editor)] = true;
-        qWarning() << "b" << mBuffers[filename(editor)];
-        mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1").arg(mBuffers[filename(editor)])));
+    QString filename = this->filename(editor);
+
+    if (mEditors.contains(filename)) {
+        mInitialized[filename] = true;
+        qWarning() << "b" << mBuffers[filename];
+        mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1").arg(mBuffers[filename])));
     }
     else {
-        mEditors[filename(editor)] = editor;
+        mEditors[filename] = editor;
         if (mNVim and mNVim->isReady()) {
-            if (mBuffers.contains(filename(editor))) {
-                qWarning() << "B2" << mBuffers[filename(editor)];
-                mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
+            if (mBuffers.contains(filename)) {
+                connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('buffer %1')]").arg(mBuffers[filename]))),
+                        &NeovimQt::MsgpackRequest::finished, [=]() {
+                    initializeBuffer(mBuffers[filename], filename);
+                    qWarning() << "B2" << mBuffers[filename];
+                    mNVim->api2()->nvim_buf_set_option(mBuffers[filename], "buftype", "acwrite");
+                });
             }
             else {
-                connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('e %1'), bufnr('$')]").arg(filename(editor)))),
+                connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('e %1'), bufnr('$')]").arg(filename))),
                         &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
-                    mBuffers[filename(editor)] = v.toList()[1].toInt();
-                    qWarning() << "B" << mBuffers[filename(editor)];
-                    mNVim->api2()->nvim_buf_set_option(mBuffers[filename(editor)], "buftype", "acwrite");
+                    mBuffers[filename] = v.toList()[1].toInt();
+                    qWarning() << "B" << mBuffers[filename];
+                    mNVim->api2()->nvim_buf_set_option(mBuffers[filename], "buftype", "acwrite");
                 });
             }
         }
@@ -713,7 +719,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
     //         },
     //         Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
     connect(document, &Core::IDocument::contentsChanged, this, [=]() {
-        if (not mInitialized[filename(editor)])
+        if (not mInitialized[filename])
             return;
         if (Core::EditorManager::currentEditor() != editor)
             return;
@@ -751,6 +757,26 @@ void QNVimPlugin::editorAboutToClose(Core::IEditor *editor) {
     mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1|bw!").arg(mBuffers[filename(editor)])));
     mBuffers.remove(filename(editor));
     mInitialized.remove(filename(editor));
+}
+
+void QNVimPlugin::initializeBuffer(long buffer, QString filename) {
+    connect(mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -1),
+            &NeovimQt::MsgpackRequest::finished, this, [=]() {
+        connect(mNVim->api2()->nvim_buf_get_lines(mBuffers[filename], 0, -1, true),
+                &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
+            mText = "";
+            for (auto t: lines.toList())
+                mText += mNVim->decode(t.toByteArray()) + '\n';
+            mText.chop(1);
+
+            syncToVim(mEditors[filename], [=]() {
+                mNVim->api2()->nvim_command("doautocmd BufRead");
+                mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -123456);
+                mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
+                mInitialized[filename] = true;
+            });
+        });
+    }, Qt::DirectConnection);
 }
 
 void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList &args) {
@@ -792,24 +818,7 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             }
             else if (cmd == "BufReadCmd") {
                 if (mEditors.contains(filename)) {
-                    connect(mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -1),
-                            &NeovimQt::MsgpackRequest::finished, this, [=]() {
-                        connect(mNVim->api2()->nvim_buf_get_lines(mBuffers[filename], 0, -1, true),
-                                &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
-                            QThread::sleep(3);
-                            mText = "";
-                            for (auto t: lines.toList())
-                                mText += mNVim->decode(t.toByteArray()) + '\n';
-                            mText.chop(1);
-
-                            syncToVim(mEditors[filename], [=]() {
-                                mNVim->api2()->nvim_command("doautocmd BufRead");
-                                mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -123456);
-                                mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
-                                mInitialized[filename] = true;
-                            });
-                        });
-                    }, Qt::DirectConnection);
+                    initializeBuffer(buffer, filename);
                 }
                 else {
                     mBuffers[filename] = buffer;
