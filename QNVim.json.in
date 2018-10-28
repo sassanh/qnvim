@@ -1,7 +1,7 @@
 {
     \"Name\" : \"QNVim\",
-    \"Version\" : \"0.2.2\",
-    \"CompatVersion\" : \"0.2.2\",
+    \"Version\" : \"0.3.0\",
+    \"CompatVersion\" : \"0.3.0\",
     \"Vendor\" : \"Sassan Haradji\",
     \"Copyright\" : \"(C) Sassan Haradji\",
     \"License\" : \"MIT\",
