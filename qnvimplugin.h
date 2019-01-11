@@ -76,9 +76,6 @@ protected:
 
     void triggerCommand(const QByteArray &);
 
-private slots:
-    void openCounterDecrementer();
-
 private:
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
@@ -96,10 +93,11 @@ private:
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
+    QMap<QString, int> mBuffers;
     QMap<QString, Core::IEditor *> mEditors;
-    QMap<QString, long> mBuffers;
+    QMap<int, QString> mFilenames;
     QMap<QString, bool> mInitialized;
-    QMap<QString, bool> mChangedTicks;
+    QMap<int, bool> mChangedTicks;
 
     QString mText;
     int mWidth, mHeight;
@@ -118,7 +116,6 @@ private:
     QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;
-    unsigned mOpenCounter;
 };
 
 } // namespace Internal
