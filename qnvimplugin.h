@@ -65,6 +65,7 @@ public:
 
 protected:
     QString filename(Core::IEditor * = nullptr) const;
+            qWarning() << 1;
 
     void fixSize(Core::IEditor * = nullptr);
     void syncCursorToVim(Core::IEditor * = nullptr);
@@ -75,6 +76,9 @@ protected:
     void syncFromVim();
 
     void triggerCommand(const QByteArray &);
+
+private slots:
+    void openCounterDecrementer();
 
 private:
     void editorOpened(Core::IEditor *);
@@ -116,6 +120,7 @@ private:
     QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;
+    unsigned mOpenCounter;
 };
 
 } // namespace Internal

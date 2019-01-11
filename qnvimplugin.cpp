@@ -162,7 +162,8 @@ QNVimPlugin::QNVimPlugin(): mEnabled(true), mCMDLine(nullptr), mNumbersColumn(nu
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
     mCursorColor(Qt::white), mBusy(false), mMouse(false),
     mNumber(true), mRelativeNumber(true), mWrap(false),
-    mCMDLineVisible(false), mUIMode("normal"), mMode("n") {
+    mCMDLineVisible(false), mUIMode("normal"), mMode("n"), mOpenCounter(0) {
+    QTimer::singleShot(1000, this, &QNVimPlugin::openCounterDecrementer);
 
     qputenv("MYQVIMRC", QDir().home().filePath(".qnvimrc").toUtf8());
 }
@@ -305,6 +306,8 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
 }
 
 void QNVimPlugin::syncCursorFromVim(const QVariantList &pos, const QVariantList &vPos, QByteArray mode) {
+    if (not mEnabled)
+        return;
     qWarning() << "QNVimPlugin::syncCursorFromVim";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     if (not editor or not mBuffers.contains(filename(editor))) {
@@ -376,6 +379,8 @@ void QNVimPlugin::syncCursorFromVim(const QVariantList &pos, const QVariantList 
 }
 
 void QNVimPlugin::syncFromVim() {
+    if (not mEnabled)
+        return;
     qWarning() << "QNVimPlugin::syncFromVim";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     if (not editor or not mInitialized.contains(filename(editor)) or not mInitialized[filename(editor)])
@@ -572,6 +577,7 @@ void QNVimPlugin::extensionsInitialized() {
 
 ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown() {
     qWarning() << "QNVimPlugin::aboutToShutdown";
+    mEnabled = false;
     // Save settings
     // Disconnect from signals that are not needed during shutdown
     // Hide UI (if you add UI that is not in the main window directly)
@@ -834,8 +840,15 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             else if (cmd == "BufEnter") {
                 if (filename != this->filename(editor)) {
                     if (mEditors.contains(filename)) {
-                        qWarning() << "Opps";
-                        Core::EditorManager::activateEditor(mEditors[filename]);
+                        mOpenCounter++;
+                        if (mOpenCounter > 2) {
+                            QTimer::singleShot(mOpenCounter * 500, [=]() {
+                                Core::EditorManager::activateEditor(mEditors[filename]);
+                            });
+                            return;
+                        }
+                        else
+                            Core::EditorManager::activateEditor(mEditors[filename]);
                     }
                     else {
                         Core::EditorManager::openEditor(filename);
@@ -995,6 +1008,12 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         if (mCMDLine->hasFocus())
             textEditor->setFocus();
     }
+}
+
+void QNVimPlugin::openCounterDecrementer() {
+    if (mOpenCounter > 0)
+        mOpenCounter--;
+    QTimer::singleShot(1000, this, &QNVimPlugin::openCounterDecrementer);
 }
 
 } // namespace Internal
