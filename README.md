@@ -1,3 +1,9 @@
+# Note
+Latest version is available in `compatible_with_neovim_master` branch,
+it's compatible with master branch of neovim and requires features introduced
+in that branch. `master` branch is frozen until neovim releases those features
+and work is done on `compatible_with_neovim_master`.
+
 # What's qnvim
 qnvim helps those who are used to editing text in vim and also need Qt Creator features to combine these two.
 
