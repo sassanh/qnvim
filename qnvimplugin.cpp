@@ -774,6 +774,7 @@ void QNVimPlugin::initializeBuffer(long buffer, QString filename) {
                 mNVim->api2()->nvim_command("doautocmd BufRead");
                 mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -123456);
                 mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
+                mInitialized[filename] = true;
             });
         });
     }, Qt::DirectConnection);
