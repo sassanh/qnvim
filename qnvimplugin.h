@@ -99,6 +99,7 @@ private:
     QMap<int, QString> mFilenames;
     QMap<QString, bool> mInitialized;
     QMap<int, bool> mChangedTicks;
+    QMap<int, QString> mBufferType;
 
     QString mText;
     int mWidth, mHeight;
@@ -116,9 +117,15 @@ private:
     QByteArray mUIMode, mMode;
     QPoint mCursor, mVCursor;
 
-    QRect mScrollRegion;
     bool settingBufferFromVim;
     unsigned long long mSyncCounter;
+};
+
+class HelpEditorFactory : public TextEditor::PlainTextEditorFactory {
+    Q_OBJECT
+
+public:
+    explicit HelpEditorFactory();
 };
 
 class TerminalEditorFactory : public TextEditor::PlainTextEditorFactory {
