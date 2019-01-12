@@ -8,6 +8,7 @@
 #include <QMutex>
 
 #include <extensionsystem/iplugin.h>
+#include <texteditor/plaintexteditorfactory.h>
 
 class QPlainTextEdit;
 
@@ -65,7 +66,6 @@ public:
 
 protected:
     QString filename(Core::IEditor * = nullptr) const;
-            qWarning() << 1;
 
     void fixSize(Core::IEditor * = nullptr);
     void syncCursorToVim(Core::IEditor * = nullptr);
@@ -121,6 +121,14 @@ private:
 
     QRect mScrollRegion;
     unsigned mOpenCounter;
+    unsigned long long mSyncCounter;
+};
+
+class TerminalEditorFactory : public TextEditor::PlainTextEditorFactory {
+    Q_OBJECT
+
+public:
+    explicit TerminalEditorFactory();
 };
 
 } // namespace Internal

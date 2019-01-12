@@ -162,7 +162,8 @@ QNVimPlugin::QNVimPlugin(): mEnabled(true), mCMDLine(nullptr), mNumbersColumn(nu
     mForegroundColor(Qt::black), mBackgroundColor(Qt::white), mSpecialColor(QColor()),
     mCursorColor(Qt::white), mBusy(false), mMouse(false),
     mNumber(true), mRelativeNumber(true), mWrap(false),
-    mCMDLineVisible(false), mUIMode("normal"), mMode("n"), mOpenCounter(0) {
+    mCMDLineVisible(false), mUIMode("normal"), mMode("n"), mOpenCounter(0),
+    mSyncCounter(0) {
     QTimer::singleShot(1000, this, &QNVimPlugin::openCounterDecrementer);
 
     qputenv("MYQVIMRC", QDir().home().filePath(".qnvimrc").toUtf8());
@@ -178,11 +179,13 @@ QNVimPlugin::~QNVimPlugin() {
 QString QNVimPlugin::filename(Core::IEditor *editor) const {
     if (not editor)
         return "";
-    return editor->document()->filePath().toString();
+    QString filename = editor->document()->filePath().toString();
+    if (filename.isEmpty())
+        filename = editor->document()->displayName();
+    return filename;
 }
 
 void QNVimPlugin::fixSize(Core::IEditor *editor) {
-    qWarning() << "QNVimPlugin::fixSize";
     if (not editor)
         editor = Core::EditorManager::currentEditor();
     if (not mNVim or not mNVim->isReady())
@@ -308,12 +311,9 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
 void QNVimPlugin::syncCursorFromVim(const QVariantList &pos, const QVariantList &vPos, QByteArray mode) {
     if (not mEnabled)
         return;
-    qWarning() << "QNVimPlugin::syncCursorFromVim";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
-    if (not editor or not mBuffers.contains(filename(editor))) {
-        qWarning() << 3;
+    if (not editor or not mBuffers.contains(filename(editor)))
         return;
-    }
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     int line = pos[0].toInt();
     int col = pos[1].toInt();
@@ -386,87 +386,84 @@ void QNVimPlugin::syncFromVim() {
     if (not editor or not mInitialized.contains(filename(editor)) or not mInitialized[filename(editor)])
         return;
     int bufferNumber = mBuffers[filename(editor)];
-    qWarning() << filename(editor) << bufferNumber;
-    if (not mInitialized[filename(editor)])
-        return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
-    connect(mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1").arg(bufferNumber))),
-            &NeovimQt::MsgpackRequest::finished, [=]() {
-        connect(mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, execute('1messages')]"),
-                &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
+    unsigned long long syncCoutner = ++mSyncCounter;
+    connect(mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, execute('1messages')]"),
+        &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
+        if (mSyncCounter != syncCoutner)
+            return;
+        if (not mBuffers.contains(filename(editor))) {
+            return;
+        }
+        QVariantList state = v.toList();
+        int bufferNumber = mBuffers[filename(editor)];
+        if (state[0].toString().toLong() != bufferNumber) {
+            return;
+        }
+        unsigned long long changedtick = state[1].toULongLong();
+        QByteArray mode = state[2].toByteArray();
+        bool modified = state[3].toBool();
+        QVariantList pos = state[4].toList().mid(1, 2);
+        QVariantList vPos = state[5].toList().mid(1, 2);
+        mNumber = state[6].toBool();
+        mRelativeNumber = state[7].toBool();
+        mWrap = state[8].toBool();
+        QString cmdLine = mNVim->decode(state[9].toByteArray()).mid(1);
+        if (not cmdLine.isEmpty()) {
+            mCMDLineDisplay = cmdLine;
+            if (not mCMDLineVisible)
+                mCMDLine->setPlainText(mCMDLineDisplay);
+        }
+        mNumbersColumn->setNumber(mNumber);
+        mNumbersColumn->setEditor(mRelativeNumber ? textEditor : nullptr);
+        if (textEditor->wordWrapMode() != (mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap))
+            textEditor->setWordWrapMode(mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap);
+        if (mChangedTicks.value(bufferNumber, 0) == changedtick) {
+            syncCursorFromVim(pos, vPos, mode);
+            return;
+        }
+        mChangedTicks[bufferNumber] = changedtick;
+        connect(mNVim->api2()->nvim_buf_get_lines(bufferNumber, 0, -1, true),
+                &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
             if (not mBuffers.contains(filename(editor))) {
                 return;
             }
-            QVariantList state = v.toList();
-            int bufferNumber = mBuffers[filename(editor)];
-            if (state[0].toString().toLong() != bufferNumber) {
-                return;
-            }
-            unsigned long long changedtick = state[1].toULongLong();
-            QByteArray mode = state[2].toByteArray();
-            bool modified = state[3].toBool();
-            QVariantList pos = state[4].toList().mid(1, 2);
-            QVariantList vPos = state[5].toList().mid(1, 2);
-            mNumber = state[6].toBool();
-            mRelativeNumber = state[7].toBool();
-            mWrap = state[8].toBool();
-            QString cmdLine = mNVim->decode(state[9].toByteArray()).mid(1);
-            if (not cmdLine.isEmpty()) {
-                mCMDLineDisplay = cmdLine;
-                if (not mCMDLineVisible)
-                    mCMDLine->setPlainText(mCMDLineDisplay);
-            }
-            mNumbersColumn->setNumber(mNumber);
-            mNumbersColumn->setEditor(mRelativeNumber ? textEditor : nullptr);
-            if (textEditor->wordWrapMode() != (mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap))
-                textEditor->setWordWrapMode(mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap);
-            if (mChangedTicks.value(bufferNumber, 0) == changedtick) {
-                syncCursorFromVim(pos, vPos, mode);
-                return;
-            }
-            mChangedTicks[bufferNumber] = changedtick;
-            connect(mNVim->api2()->nvim_buf_get_lines(bufferNumber, 0, -1, true),
-                    &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
-                if (not mBuffers.contains(filename(editor))) {
-                    return;
+
+            mText = "";
+            for (auto t: lines.toList())
+                mText += mNVim->decode(t.toByteArray()) + '\n';
+            mText.chop(1);
+            QString oldText = textEditor->toPlainText();
+            diff_match_patch differ;
+            QList<Patch> patches = differ.patch_make(oldText, mText);
+
+            if (patches.size()) {
+                QTextCursor cursor = textEditor->textCursor();
+                cursor.beginEditBlock();
+                for (auto patch: patches) {
+                    cursor.setPosition(patch.start1);
+                    cursor.setPosition(patch.start1 + patch.length1, QTextCursor::KeepAnchor);
+                    cursor.insertText(mText.mid(patch.start2, patch.length2));
                 }
+                cursor.endEditBlock();
+            }
 
-                mText = "";
-                for (auto t: lines.toList())
-                    mText += mNVim->decode(t.toByteArray()) + '\n';
-                mText.chop(1);
-                QString oldText = textEditor->toPlainText();
-                diff_match_patch differ;
-                QList<Patch> patches = differ.patch_make(oldText, mText);
-
-                if (patches.size()) {
-                    QTextCursor cursor = textEditor->textCursor();
-                    cursor.beginEditBlock();
-                    for (auto patch: patches) {
-                        cursor.setPosition(patch.start1);
-                        cursor.setPosition(patch.start1 + patch.length1, QTextCursor::KeepAnchor);
-                        cursor.insertText(mText.mid(patch.start2, patch.length2));
-                    }
-                    cursor.endEditBlock();
-                }
-
-                if (textEditor->document()->isModified() != modified)
-                    textEditor->document()->setModified(modified);
-                syncCursorFromVim(pos, vPos, mode);
-            });
+            if (textEditor->document()->isModified() != modified)
+                textEditor->document()->setModified(modified);
+            syncCursorFromVim(pos, vPos, mode);
         });
     });
 }
 
 void QNVimPlugin::triggerCommand(const QByteArray &commandId) {
-    qWarning() << "QNVimPlugin::triggerCommand";
     Core::ActionManager::command(commandId.constData())->action()->trigger();
 }
 
 bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString) {
-    qWarning() << "QNVimPlugin::initialize";
     Q_UNUSED(arguments)
     Q_UNUSED(errorString)
+
+    new TerminalEditorFactory();
 
     return initialize();
 }
@@ -527,10 +524,13 @@ execute \"command -bar DebugContinue call rpcnotify(%1, 'Gui', 'triggerCommand',
 execute \"command -bar QMake call rpcnotify(%1, 'Gui', 'triggerCommand', 'Qt4Builder.RunQMake')\"\n\
 execute \"command -bar Target call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.SelectTargetQuick')\"\n\
 \
-execute \"autocmd BufReadCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufReadCmd', expand('<abuf>'), expand('<afile>:p'))\"\n\
-execute \"autocmd BufWriteCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'))|set nomodified\"\n\
-execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'))\"\n\
-execute \"autocmd BufDelete * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'))\"\n\
+execute \"autocmd BufReadCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufReadCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
+execute \"autocmd TermOpen * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'TermOpen', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
+execute \"autocmd BufWriteCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)|set nomodified\"\n\
+execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
+execute \"autocmd BufDelete * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
+execute \"autocmd BufHidden * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufHidden', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
+execute \"autocmd BufWipeout * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
 \
 function! SetCursor(line, col)\n\
     call cursor(a:line, a:col)\n\
@@ -569,14 +569,12 @@ source ~/.qnvimrc").arg(mNVim->channel())));
 }
 
 void QNVimPlugin::extensionsInitialized() {
-    qWarning() << "QNVimPlugin::extensionsInitialized";
     // Retrieve objects from the plugin manager's object pool
     // In the extensionsInitialized function, a plugin can be sure that all
     // plugins that depend on it are completely initialized.
 }
 
 ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown() {
-    qWarning() << "QNVimPlugin::aboutToShutdown";
     mEnabled = false;
     // Save settings
     // Disconnect from signals that are not needed during shutdown
@@ -669,7 +667,6 @@ void QNVimPlugin::toggleQNVim() {
 }
 
 void QNVimPlugin::editorOpened(Core::IEditor *editor) {
-    qWarning() << "QNVimPlugin::editorOpened";
     if (not mEnabled)
         return;
 
@@ -677,7 +674,6 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
         return;
 
     QString filename(this->filename(editor));
-    qWarning() << "Opened" << filename;
 
     mInitialized[filename] = false;
 
@@ -700,17 +696,14 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
                 connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('buffer %1')]").arg(mBuffers[filename]))),
                         &NeovimQt::MsgpackRequest::finished, [=]() {
                     initializeBuffer(mBuffers[filename], filename);
-                    qWarning() << "Contains" << mBuffers[filename];
                     mNVim->api2()->nvim_buf_set_option(mBuffers[filename], "buftype", "acwrite");
                 });
             }
             else {
-                qWarning() << QString("[execute('e %1'), bufnr('$')]").arg(filename);
                 connect(mNVim->api2()->nvim_eval(mNVim->encode(QString("[execute('e %1'), bufnr('')]").arg(filename))),
                         &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
                     mBuffers[filename] = v.toList()[1].toInt();
                     mFilenames[mBuffers[filename]] = filename;
-                    qWarning() << "Doesn't contain" << mBuffers[filename] << filename << v.toList()[1].toInt();
                     mNVim->api2()->nvim_buf_set_option(mBuffers[filename], "buftype", "acwrite");
                 });
             }
@@ -768,10 +761,8 @@ void QNVimPlugin::editorAboutToClose(Core::IEditor *editor) {
 }
 
 void QNVimPlugin::initializeBuffer(long buffer, QString filename) {
-    qWarning() << "QNVimPlugin::initializeBuffer" << buffer << filename;
     connect(mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -1),
             &NeovimQt::MsgpackRequest::finished, this, [=]() {
-            qWarning() << 1;
         connect(mNVim->api2()->nvim_buf_get_lines(buffer, 0, -1, true),
                 &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
             mText = "";
@@ -783,7 +774,6 @@ void QNVimPlugin::initializeBuffer(long buffer, QString filename) {
                 mNVim->api2()->nvim_command("doautocmd BufRead");
                 mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -123456);
                 mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
-                mInitialized[filename] = true;
             });
         });
     }, Qt::DirectConnection);
@@ -805,12 +795,33 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             QByteArray cmd = methodArgs.first().toByteArray();
             long buffer = methodArgs[1].toByteArray().toLong();
             QString filename = mNVim->decode(methodArgs[2].toByteArray());
-            if (cmd == "BufWriteCmd") {
+            QString bufferType = mNVim->decode(methodArgs[3].toByteArray());
+            bool bufferListed = methodArgs[4].toInt();
+            QString bufferHidden = mNVim->decode(methodArgs[5].toByteArray());
+            if (cmd == "BufReadCmd") {
+                if (mEditors.contains(filename)) {
+                    initializeBuffer(buffer, filename);
+                }
+                else {
+                    mBuffers[filename] = buffer;
+                }
+            }
+            else if (cmd == "TermOpen") {
+                if (mEditors.contains(filename)) {
+                    initializeBuffer(buffer, filename);
+                }
+                else {
+                    mBuffers[filename] = buffer;
+                    mInitialized[filename] = true;
+                    mFilenames[buffer] = filename;
+                    mEditors[filename] = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);
+                }
+            }
+            else if (cmd == "BufWriteCmd") {
                 if (mBuffers.values().contains(buffer)) {
                     QString currentFilename = mFilenames[buffer];
                     if (mEditors[currentFilename]->document()->save(nullptr, filename)) {
                         if (currentFilename != filename) {
-                            qWarning() << currentFilename << filename;
                             mEditors.remove(currentFilename);
                             mFilenames.remove(mBuffers[currentFilename]);
                             mChangedTicks.remove(mBuffers[currentFilename]);
@@ -828,17 +839,8 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                         mNVim->api2()->nvim_buf_set_option(buffer, "modified", true);
                 }
             }
-            else if (cmd == "BufReadCmd") {
-                if (mEditors.contains(filename)) {
-                    qWarning() << "BufReadCMD sync";
-                    initializeBuffer(buffer, filename);
-                }
-                else {
-                    mBuffers[filename] = buffer;
-                }
-            }
             else if (cmd == "BufEnter") {
-                if (filename != this->filename(editor)) {
+                if (not filename.isEmpty() and filename != this->filename(editor)) {
                     if (mEditors.contains(filename)) {
                         mOpenCounter++;
                         if (mOpenCounter > 2) {
@@ -856,7 +858,18 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                 }
             }
             else if (cmd == "BufDelete") {
-                if (mEditors.contains(filename) and mEditors[filename])
+                if (bufferListed and mEditors.contains(filename) and mEditors[filename])
+                    Core::EditorManager::closeEditor(mEditors[filename]);
+            }
+            else if (cmd == "BufHidden") {
+                if (
+                    (bufferHidden == "wipe" or bufferHidden == "delete" or bufferHidden == "unload") and
+                    mEditors.contains(filename) and mEditors[filename]
+                )
+                    Core::EditorManager::closeEditor(mEditors[filename]);
+            }
+            else if (cmd == "BufWipeout") {
+                if (!bufferListed and mEditors.contains(filename) and mEditors[filename])
                     Core::EditorManager::closeEditor(mEditors[filename]);
             }
         }
@@ -866,7 +879,6 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
 }
 
 void QNVimPlugin::redraw(const QVariantList &args) {
-    qWarning() << "QNVimPlugin::redraw";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     for(auto arg: args) {
@@ -1014,6 +1026,14 @@ void QNVimPlugin::openCounterDecrementer() {
     if (mOpenCounter > 0)
         mOpenCounter--;
     QTimer::singleShot(1000, this, &QNVimPlugin::openCounterDecrementer);
+}
+
+
+TerminalEditorFactory::TerminalEditorFactory()
+    : PlainTextEditorFactory() {
+    setId("Terminal");
+    setDisplayName("Terminal");
+    addMimeType("text/plain");
 }
 
 } // namespace Internal
