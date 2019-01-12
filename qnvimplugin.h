@@ -77,9 +77,6 @@ protected:
 
     void triggerCommand(const QByteArray &);
 
-private slots:
-    void openCounterDecrementer();
-
 private:
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
@@ -120,7 +117,7 @@ private:
     QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;
-    unsigned mOpenCounter;
+    bool settingBufferFromVim;
     unsigned long long mSyncCounter;
 };
 
