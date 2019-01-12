@@ -184,16 +184,22 @@ QString QNVimPlugin::filename(Core::IEditor *editor) const {
 }
 
 void QNVimPlugin::fixSize(Core::IEditor *editor) {
+    qWarning() << 11;
     if (not editor)
         editor = Core::EditorManager::currentEditor();
     if (not mNVim or not mNVim->isReady())
         return;
+    qWarning() << 22;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
-    int width = qFloor((textEditor->width() - textEditor->extraArea()->width()) / fm.width('A')) + 2;
+    // -1 is visual whitespaces that Qt Creator put space for (whether it renders them or not)
+    // TODO: After ext_columns +4 should be removed
+    int width = qFloor(textEditor->viewport()->width() / fm.width('A')) - 1 + 3;
     int height = qFloor(textEditor->height() / fm.lineSpacing());
+    qWarning() << textEditor->viewport()->width() << textEditor->extraArea()->width();
+    qWarning() << width;
     if (width != mWidth or height != mHeight)
-        mNVim->api2()->nvim_ui_try_resize(width, height);
+        mNVim->api6()->nvim_ui_try_resize_grid(1, width, height);
 }
 
 void QNVimPlugin::syncCursorToVim(Core::IEditor *editor) {
@@ -390,7 +396,6 @@ void QNVimPlugin::syncFromVim() {
     connect(mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, execute('1messages')]"),
         &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
-        qWarning() << "WHAT" << state[0].toString().toLong();
         if (mSyncCounter != syncCoutner)
             return;
         if (not mBuffers.contains(filename(editor))) {
@@ -588,7 +593,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
     /* if (qobject_cast<QLabel *>(object)) */
     if (qobject_cast<TextEditor::TextEditorWidget *>(object) or qobject_cast<QPlainTextEdit *>(object)) {
         if (event->type() == QEvent::Resize) {
-            fixSize();
+            QTimer::singleShot(100, [=]() { fixSize(); });
             return false;
         }
     }
@@ -753,7 +758,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
         syncSelectionToVim(editor);
     }, Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection));
 
-    fixSize(editor);
+    QTimer::singleShot(100, [=]() { fixSize(editor); });
 }
 
 void QNVimPlugin::editorAboutToClose(Core::IEditor *editor) {
@@ -863,10 +868,15 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                             if (bufferType == "terminal")
                                 editor = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);
                             else if (bufferType == "help") {
-                                QString helpTitle = "vim://help";
                                 editor = Core::EditorManager::openEditorWithContents("Help", &filename, QByteArray(), "vim://help");
                                 editor->document()->setFilePath(Utils::FileName::fromString(filename));
-                                editor->document()->setPreferredDisplayName(helpTitle);
+                                editor->document()->setPreferredDisplayName("Vim Help");
+                                editor->document()->setTemporary(true);
+                            }
+                            else if (bufferType == "nowrite" or bufferType == "nofile") {
+                                editor = Core::EditorManager::openEditorWithContents("Help", &filename, QByteArray(), "vim://help");
+                                editor->document()->setFilePath(Utils::FileName::fromString(filename));
+                                editor->document()->setPreferredDisplayName(filename);
                                 editor->document()->setTemporary(true);
                             }
                         }
