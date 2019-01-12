@@ -8,6 +8,7 @@
 #include <QMutex>
 
 #include <extensionsystem/iplugin.h>
+#include <texteditor/plaintexteditorfactory.h>
 
 class QPlainTextEdit;
 
@@ -76,9 +77,6 @@ protected:
 
     void triggerCommand(const QByteArray &);
 
-private slots:
-    void openCounterDecrementer();
-
 private:
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
@@ -96,10 +94,11 @@ private:
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
+    QMap<QString, int> mBuffers;
     QMap<QString, Core::IEditor *> mEditors;
-    QMap<QString, long> mBuffers;
+    QMap<int, QString> mFilenames;
     QMap<QString, bool> mInitialized;
-    QMap<QString, bool> mChangedTicks;
+    QMap<int, bool> mChangedTicks;
 
     QString mText;
     int mWidth, mHeight;
@@ -118,7 +117,15 @@ private:
     QPoint mCursor, mVCursor;
 
     QRect mScrollRegion;
-    unsigned mOpenCounter;
+    bool settingBufferFromVim;
+    unsigned long long mSyncCounter;
+};
+
+class TerminalEditorFactory : public TextEditor::PlainTextEditorFactory {
+    Q_OBJECT
+
+public:
+    explicit TerminalEditorFactory();
 };
 
 } // namespace Internal
