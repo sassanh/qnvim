@@ -9,7 +9,7 @@ qnvim helps those who are used to editing text in vim and also need Qt Creator f
 
 It runs an instance of Neovim inside Qt Creator, so it's able to run your `init.vim` and all your vim plugins and your tweaks in `init.vim` should work.
 
-[![qnvim in action](https://j.gifs.com/pQrVP1.gif)](https://www.youtube.com/watch?v=S_iPMoHre_s)
+[![qnvim in action](https://j.gifs.com/pQrVP1.gif)](https://www.youtube.com/watch?v=vbT1x3Mnhv4)
 
 # Status
 It's in beta but it's mostly stable and usable, for last few months I've been using Qt Creator only with this plugin with no pain. Currently these are the known issues:
