@@ -184,20 +184,18 @@ QString QNVimPlugin::filename(Core::IEditor *editor) const {
 }
 
 void QNVimPlugin::fixSize(Core::IEditor *editor) {
-    qWarning() << 11;
     if (not editor)
         editor = Core::EditorManager::currentEditor();
     if (not mNVim or not mNVim->isReady())
         return;
-    qWarning() << 22;
+    if (!editor)
+        return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
     // -1 is visual whitespaces that Qt Creator put space for (whether it renders them or not)
     // TODO: After ext_columns +4 should be removed
     int width = qFloor(textEditor->viewport()->width() / fm.width('A')) - 1 + 3;
     int height = qFloor(textEditor->height() / fm.lineSpacing());
-    qWarning() << textEditor->viewport()->width() << textEditor->extraArea()->width();
-    qWarning() << width;
     if (width != mWidth or height != mHeight)
         mNVim->api6()->nvim_ui_try_resize_grid(1, width, height);
 }
@@ -559,7 +557,7 @@ source ~/.qnvimrc").arg(mNVim->channel())));
         NeovimQt::MsgpackRequest *req = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
         connect(req, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
         connect(req, &NeovimQt::MsgpackRequest::timeout, [=]() {
-            qWarning() << "THE FUCK HAPPENED!";
+            qWarning() << "TIMEOUT!";
         });
         // FIXME grab timeout from connector
         req->setTimeout(10000);
@@ -802,7 +800,6 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
     if (not editor or not mEditors.contains(filename(editor)))
         return;
     if (name == "Gui") {
-        qWarning() << args;
         QByteArray method = args.first().toByteArray();
         QVariantList methodArgs = args.mid(1);
         if (method == "triggerCommand") {
@@ -860,7 +857,6 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                         }
                     }
                     else {
-                        qWarning() << buffer << filename << bufferType;
                         if (bufferType.isEmpty())
                             Core::EditorManager::openEditor(filename);
                         else {
