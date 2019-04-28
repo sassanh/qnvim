@@ -1,9 +1,3 @@
-# Note
-Latest version is available in `compatible_with_neovim_master` branch,
-it's compatible with master branch of neovim and requires features introduced
-in that branch. `master` branch is frozen until neovim releases those features
-and work is done on `compatible_with_neovim_master`.
-
 # What's qnvim
 qnvim helps those who are used to editing text in vim and also need Qt Creator features to combine these two.
 
@@ -18,7 +12,7 @@ It runs an instance of Neovim inside Qt Creator, so it's able to run your `init.
 # Status
 It's in beta but it's mostly stable and usable, for last few months I've been using Qt Creator only with this plugin with no pain. Currently these are the known issues:
 1. It can't show some special buffers (buffer types like quickfix, special buffers some plugins create, etc, plugins such as gundo, tagbar, gitgutter, etc)
-2. `wrap` doesn't work alright (just a minor display problem, it's due to lake of a feature in neovim, described in this issue: https://github.com/neovim/neovim/issues/8037).
+2. It should use vim highlights for buffers that Qt Creator doens't support. (like vim helpfiles and many others.)
 
 All my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that rely on special buffers. (Work is in progress to handle all types of buffers.)
 
