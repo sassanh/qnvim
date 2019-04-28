@@ -391,7 +391,7 @@ void QNVimPlugin::syncFromVim() {
         return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     unsigned long long syncCoutner = ++mSyncCounter;
-    connect(mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, execute('1messages')]"),
+    connect(mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap]"),
         &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
         if (mSyncCounter != syncCoutner)
@@ -410,12 +410,6 @@ void QNVimPlugin::syncFromVim() {
         mNumber = state[6].toBool();
         mRelativeNumber = state[7].toBool();
         mWrap = state[8].toBool();
-        QString cmdLine = mNVim->decode(state[9].toByteArray()).mid(1);
-        if (not cmdLine.isEmpty()) {
-            mCMDLineDisplay = cmdLine;
-            if (not mCMDLineVisible)
-                mCMDLine->setPlainText(mCMDLineDisplay);
-        }
         mNumbersColumn->setNumber(mNumber);
         mNumbersColumn->setEditor(mRelativeNumber ? textEditor : nullptr);
         if (textEditor->wordWrapMode() != (mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap))
@@ -553,6 +547,7 @@ source ~/.qnvimrc").arg(mNVim->channel())));
         options.insert("ext_cmdline", true);
         options.insert("ext_multigrid", true);
         options.insert("ext_wildmenu", true);
+        options.insert("ext_messages", true);
         options.insert("rgb", true);
         NeovimQt::MsgpackRequest *req = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
         connect(req, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
@@ -801,6 +796,8 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
         return;
     if (name == "Gui") {
         QByteArray method = args.first().toByteArray();
+        if (method != "msg_history_show")
+            qWarning() << args;
         QVariantList methodArgs = args.mid(1);
         if (method == "triggerCommand") {
             for (auto methodArg: methodArgs)
@@ -918,7 +915,8 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         QVariantList line = arg.toList();
         QByteArray command = line.first().toByteArray();
         QVariantList args = line.mid(1).first().toList();
-        if (not command.startsWith("cmdline") and command != "flush")
+        if (not command.startsWith("msg") and
+                not command.startsWith("cmdline") and command != "flush")
             shouldSync = true;
         if (command == "flush")
             flush = true;
@@ -986,6 +984,15 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         else if (command == "cmdline_hide") {
             mCMDLineVisible = false;
         }
+        else if (command == "msg_show") {
+            QVariantList contentList = args[1].toList();
+            mMessageLineDisplay = "";
+            for (auto contentItem: contentList)
+                mMessageLineDisplay += mNVim->decode(contentItem.toList()[1].toByteArray());
+        }
+        else if (command == "msg_clear") {
+            mMessageLineDisplay = "";
+        }
         else {
         }
     }
@@ -1032,6 +1039,9 @@ void QNVimPlugin::redraw(const QVariantList &args) {
     else {
         if (mCMDLine->toPlainText() != mCMDLineDisplay)
             mCMDLine->setPlainText(mCMDLineDisplay);
+        else
+            mCMDLine->setPlainText(mMessageLineDisplay);
+        mCMDLine->setToolTip(mCMDLine->toPlainText());
         if (mCMDLine->hasFocus())
             textEditor->setFocus();
     }

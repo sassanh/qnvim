@@ -109,6 +109,7 @@ private:
 
     bool mCMDLineVisible;
     QString mCMDLineContent, mCMDLineDisplay;
+    QString mMessageLineDisplay;
     int mCMDLinePos;
     QChar mCMDLineFirstc;
     QString mCMDLinePrompt;
