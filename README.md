@@ -1,6 +1,3 @@
-# Branch Note
-This branch is only comptabile with versions of neovim that has `ext_multigrid`. (At the time of writing this note it's on master branch of neovim and not in any releases.)
-
 # What's qnvim
 qnvim helps those who are used to editing text in vim and also need Qt Creator features to combine these two.
 
