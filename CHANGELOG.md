@@ -2,6 +2,10 @@
 
 ## 0
 
+### 0.4.1    2019-04-30
+
+- Fixed `number` not showing correctly when `relativenumber` was enabled
+
 ### 0.4.0    2019-04-29
 
 - Started writing `CHANGELOG.md`

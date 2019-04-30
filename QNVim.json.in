@@ -1,11 +1,11 @@
 {
     \"Name\" : \"QNVim\",
-    \"Version\" : \"0.4.0\",
+    \"Version\" : \"0.4.1\",
     \"CompatVersion\" : \"0.4.0\",
     \"Vendor\" : \"Sassan Haradji\",
     \"Copyright\" : \"(C) Sassan Haradji\",
     \"License\" : \"MIT\",
-    \"Description\" : \"NeoVim Backend for QtCreator\",
+    \"Description\" : \"NeoVim Backend for Qt Creator\",
     \"Url\" : \"\",
     $$dependencyList
 }
