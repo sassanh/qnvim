@@ -18,7 +18,7 @@ All my 149 plugins installed in neovim work alright except a few that relate on 
 
 Please let me know if you find any problems and please contribute to this project if you have the time.
 
-# Install Instructions
+# Installation Instructions
 1. Build Qt Creator from git repository (https://wiki.qt.io/Building_Qt_Creator_from_Git)
 
 If you build the head of master branch, then you can use qnvim only with your build, if you wanna use qnvim with the official release of Qt Creator you should checkout the tag that matches your installed Qt Creator.
@@ -48,6 +48,16 @@ In the Qt Creator go to `Projects` Tab/Mode (you can select it in the left colum
 7. Build and run the project.
 
 8. Put the built library in the location that Qt Creator expects plugins (it varies based on your OS) and use the built Qt Creator instead of the official version. (Or if you checked out the tag that corresponds to your installed Qt Creator, then you can use your own installed Qt Creator.)
+
+## Updating
+
+If you update your Qt Creator, you need to build qnvim against the version of Qt Creator you updated to. For example if you update from 4.8.0 to 4.9.0, you should go to the directory you clonned Qt Creator in, run `git fetch` followed by `git checkout <VERSION> --recurse`. Then you should go to the build directory of Qt Creator and **run `make clean`** and then build Qt Creator again. Then you should clean and build qnvim.
+
+If you want to update qnvim, you just need to `git pull` in its directory and build it again, no need to do anything with Qt Creator build.
+
+### Always run `make clean` before building anything after you upgrade Qt Creator
+
+It's important to run `make clean` before building Qt Creator when it's upgraded, otherwise you'll end up with plugins with mismatching versions. (like this https://github.com/sassanh/qnvim/issues/8#issuecomment-485456543)
 
 # Sample `.qnvimrc`
 There's a sample `.qnvimrc` file available in the repo, it provides most of the convenient keyboard shortcuts for building, deplying, running, switching buffers, switching tabs, etc. It'll also help you understand how you can create new keyboard shortcuts using Qt Creator commands.
