@@ -36,6 +36,7 @@
 #include <QTextEdit>
 #include <QThread>
 #include <QtMath>
+#include <QStandardPaths>
 
 namespace QNVim {
 namespace Internal {
@@ -164,7 +165,6 @@ QNVimPlugin::QNVimPlugin(): mEnabled(true), mCMDLine(nullptr), mNumbersColumn(nu
     mNumber(true), mRelativeNumber(true), mWrap(false),
     mCMDLineVisible(false), mUIMode("normal"), mMode("n"), settingBufferFromVim(false),
     mSyncCounter(0) {
-    qputenv("MYQVIMRC", QDir().home().filePath(".qnvimrc").toUtf8());
 }
 
 QNVimPlugin::~QNVimPlugin() {
@@ -537,7 +537,7 @@ function! SetCursor(line, col)\n\
     endif\n\
     call cursor(a:line, a:col)\n\
 endfunction\n\
-source ~/.qnvimrc").arg(mNVim->channel())));
+autocmd VimEnter * let $MYQVIMRC=substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', v:true) | source $MYQVIMRC").arg(mNVim->channel())));
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
                 this, &QNVimPlugin::handleNotification);
 
@@ -545,9 +545,10 @@ source ~/.qnvimrc").arg(mNVim->channel())));
         options.insert("ext_popupmenu", true);
         options.insert("ext_tabline", false);
         options.insert("ext_cmdline", true);
-        options.insert("ext_multigrid", true);
         options.insert("ext_wildmenu", true);
         options.insert("ext_messages", true);
+        options.insert("ext_multigrid", true);
+        options.insert("ext_hlstate", true);
         options.insert("rgb", true);
         NeovimQt::MsgpackRequest *req = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
         connect(req, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
@@ -673,6 +674,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
         return;
 
     QString filename(this->filename(editor));
+    mText = "";
     qWarning() << "Opened " << filename << settingBufferFromVim;
 
     mInitialized[filename] = false;
@@ -992,6 +994,15 @@ void QNVimPlugin::redraw(const QVariantList &args) {
         }
         else if (command == "msg_clear") {
             mMessageLineDisplay = "";
+        }
+        else if (command == "msg_history_show") {
+            QVariantList entries = args[1].toList();
+            mMessageLineDisplay = "";
+            for (auto entry: entries) {
+                QVariantList contentList = entry.toList()[1].toList();
+                for (auto contentItem: contentList)
+                    mMessageLineDisplay += mNVim->decode(contentItem.toList()[1].toByteArray()) + '\n';
+            }
         }
         else {
         }

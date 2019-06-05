@@ -59,8 +59,13 @@ If you want to update qnvim, you just need to `git pull` in its directory and bu
 
 It's important to run `make clean` before building Qt Creator when it's upgraded, otherwise you'll end up with plugins with mismatching versions. (like this https://github.com/sassanh/qnvim/issues/8#issuecomment-485456543)
 
-# Sample `.qnvimrc`
-There's a sample `.qnvimrc` file available in the repo, it provides most of the convenient keyboard shortcuts for building, deplying, running, switching buffers, switching tabs, etc. It'll also help you understand how you can create new keyboard shortcuts using Qt Creator commands.
+# `qnvim.vim`
+
+You can put custom vim commands for your QtCreator environment in `qnvim.vim` which is a file in the same directory as `init.vim` (`:help $MYVIMRC`). `$MYQVIMRC` (note the `Q` after `MY`) is set to its path.
+
+## Sample `qnvim.vim`
+
+There's a sample `qnvim.vim` file available in the repo, it provides most of the convenient keyboard shortcuts for building, deplying, running, switching buffers, switching tabs, etc. It'll also help you understand how you can create new keyboard shortcuts using Qt Creator commands.
 
 # Credits
 
