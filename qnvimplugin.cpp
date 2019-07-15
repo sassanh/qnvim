@@ -274,7 +274,6 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
 }
 
 void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callback) {
-    qWarning() << "QNVimPlugin::syncToVim";
     if (not editor)
         editor = Core::EditorManager::currentEditor();
     if (not editor or not mEditors.contains(filename(editor)))
@@ -285,28 +284,18 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
     int line = text.left(cursorPosition).count('\n') + 1;
     int col = mNVim->encode(text.left(cursorPosition).section('\n', -1)).length() + 1;
 
-    diff_match_patch differ;
-    QList<Patch> patches = differ.patch_make(mText, text);
-    mCursor.setY(line);
-    mCursor.setX(col);
-
-    if (patches.count()) {
-        QString patchCommand = "set paste|call execute('normal! ";
-        for (auto patch: patches) {
-            int startLine = mText.left(patch.start1).count('\n') + 1;
-            int startCol = mNVim->encode(mText.left(patch.start1).section('\n', -1)).length() + 1;
-            int endLine = mText.left(patch.start1 + patch.length1 - 1).count('\n') + 1;
-            int endCol = mNVim->encode(mText.left(patch.start1 + patch.length1 - 1).section('\n', -1)).length() + 1;
-            mText.replace(patch.start1, patch.length1, text.mid(patch.start2, patch.length2));
-            patchCommand += QString("G$v%1G%2|o%3G%4|c%5\x03").arg(startLine).arg(startCol).arg(endLine).arg(endCol).
-                    arg(text.mid(patch.start2, patch.length2).replace("'", "''"));
-        }
-        patchCommand += QString("i\x07u\x03')|set nopaste|call cursor(%1,%2)\n").arg(line).arg(col);
-        connect(mNVim->api2()->nvim_command(mNVim->encode(patchCommand)),
+    if (mText != text) {
+        qWarning() << "QNVimPlugin::syncToVim";
+        int bufferNumber = mBuffers[filename(editor)];
+        connect(mNVim->api2()->nvim_buf_set_lines(bufferNumber, 0, -1, true, text.toUtf8().split('\n')),
                 &NeovimQt::MsgpackRequest::finished, [=]() {
-            if (callback)
-                callback();
+            connect(mNVim->api2()->nvim_command(mNVim->encode(QString("call cursor(%1,%2)").arg(line).arg(col))),
+                    &NeovimQt::MsgpackRequest::finished, [=]() {
+                if (callback)
+                    callback();
+            });
         });
+        // patchCommand += QString("i\x07u\x03')|set nopaste|call cursor(%1,%2)\n").arg(line).arg(col);
     }
     else if (callback)
         callback();
@@ -385,7 +374,6 @@ void QNVimPlugin::syncCursorFromVim(const QVariantList &pos, const QVariantList 
 void QNVimPlugin::syncFromVim() {
     if (not mEnabled)
         return;
-    qWarning() << "QNVimPlugin::syncFromVim";
     Core::IEditor *editor = Core::EditorManager::currentEditor();
     if (not editor or not mInitialized.contains(filename(editor)) or not mInitialized[filename(editor)])
         return;
@@ -419,6 +407,7 @@ void QNVimPlugin::syncFromVim() {
             return;
         }
         mChangedTicks[bufferNumber] = changedtick;
+        qWarning() << "QNVimPlugin::syncFromVim";
         connect(mNVim->api2()->nvim_buf_get_lines(bufferNumber, 0, -1, true),
                 &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
             if (not mBuffers.contains(filename(editor))) {
@@ -561,7 +550,8 @@ autocmd VimEnter * let $MYQVIMRC=substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 
             qWarning() << "ATTACHED!";
         });
 
-        mNVim->api2()->vim_subscribe("Gui");
+        mNVim->api2()->nvim_subscribe("Gui");
+        mNVim->api2()->nvim_subscribe("api-buffer-updates");
     });
 
     return true;
@@ -601,7 +591,6 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
 #endif
         QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
         mNVim->api2()->nvim_input(mNVim->encode(key));
-        qWarning() << key;
         return true;
     }
     else if (event->type() == QEvent::ShortcutOverride) {
@@ -615,7 +604,6 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
         QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
         if (keyEvent->key() == Qt::Key_Escape) {
             mNVim->api2()->nvim_input(mNVim->encode(key));
-            qWarning() << "ESCAPE" << key;
         }
         else
             keyEvent->accept();
@@ -798,8 +786,6 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
         return;
     if (name == "Gui") {
         QByteArray method = args.first().toByteArray();
-        if (method != "msg_history_show")
-            qWarning() << args;
         QVariantList methodArgs = args.mid(1);
         if (method == "triggerCommand") {
             for (auto methodArg: methodArgs)
@@ -820,6 +806,7 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                 }
                 else {
                     mBuffers[filename] = buffer;
+                    mFilenames[mBuffers[filename]] = filename;
                     if (cmd == "TermOpen")
                         mNVim->api2()->nvim_command("doautocmd BufEnter");
                 }
@@ -827,6 +814,8 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             else if (cmd == "BufWriteCmd") {
                 if (mBuffers.values().contains(buffer)) {
                     QString currentFilename = mFilenames[buffer];
+                    qWarning() << 123 << currentFilename;
+                    qWarning() << (mEditors[currentFilename]->document()->save(nullptr, filename));
                     if (mEditors[currentFilename]->document()->save(nullptr, filename)) {
                         if (currentFilename != filename) {
                             mEditors.remove(currentFilename);
@@ -1024,13 +1013,24 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             textEditor->setCursorWidth(11);
     }
 
+    QFontMetrics fm(mCMDLine->font());
     if (mCMDLineVisible) {
-        QFontMetrics fm(mCMDLine->font());
         QString text = mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent;
         if (mCMDLine->toPlainText() != text)
             mCMDLine->setPlainText(text);
-        if (mCMDLine->minimumWidth() != qMax(200, qMin(qCeil(fm.width(mCMDLine->toPlainText())) + 10, 400)))
-            mCMDLine->setMinimumWidth(qMax(200, qMin(qCeil(fm.width(mCMDLine->toPlainText())) + 10, 400)));
+        auto height = (text.count(QRegExp("[\n\r]")) + 1) * fm.height();
+        auto width = 0;
+        for (auto line: text.split(QRegExp("[\n\r]"))) {
+            width += fm.width(line);
+        }
+        if (mCMDLine->minimumWidth() != qMax(200, qMin(width + 10, 400)))
+            mCMDLine->setMinimumWidth(qMax(200, qMin(width + 10, 400)));
+        if (mCMDLine->minimumHeight() != qMax(25, qMin(height + 4, 400))) {
+            mCMDLine->setMinimumHeight(qMax(25, qMin(height + 4, 400)));
+            mCMDLine->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
+            mCMDLine->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
+            mCMDLine->parentWidget()->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
+        }
         if (not mCMDLine->hasFocus())
             mCMDLine->setFocus();
         QTextCursor cursor = mCMDLine->textCursor();
@@ -1052,10 +1052,16 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             mCMDLine->setPlainText(mCMDLineDisplay);
         else
             mCMDLine->setPlainText(mMessageLineDisplay);
-        mCMDLine->setToolTip(mCMDLine->toPlainText());
         if (mCMDLine->hasFocus())
             textEditor->setFocus();
+        auto height = fm.height();
+        mCMDLine->setMinimumHeight(qMax(25, qMin(height + 4, 400)));
+        mCMDLine->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
+        mCMDLine->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
+        mCMDLine->parentWidget()->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
     }
+
+    mCMDLine->setToolTip(mCMDLine->toPlainText());
 }
 
 
