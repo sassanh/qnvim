@@ -2,7 +2,7 @@
 
 ## 1
 
-### 1.0.2    2019-07-16
+### 1.0.2    _2019-07-16_
 
 - Fixed a segmentation fault which happened after exiting some special terminal
     buffers (like fzf)
@@ -13,7 +13,7 @@
     Now there should be no flickering, unnecessary CPU usage, etc when syncing
     from neovim to Qt Creator.
 
-### 1.0.1    2019-07-15
+### 1.0.1    _2019-07-15_
 
 - Using `nvim_buf_set_lines` for synching from Qt Creator to neovim which should
     make synching from Qt Creator to neovim much more stable. (We still need
@@ -26,7 +26,7 @@
     bar go blank forever
 
 
-### 1.0.0    2019-06-05
+### 1.0.0    _2019-06-05_
 
 - $MYQVIMRC is now a file named `qnvim.vim` in the same directory as $MYVIMRC
 
@@ -35,7 +35,7 @@
 
 ## 0
 
-### 0.4.0    2019-04-29
+### 0.4.0    _2019-04-29_
 
 - Started writing `CHANGELOG.md`
 - Added `ext_messages` so now `echo` and its family are supported (considering
