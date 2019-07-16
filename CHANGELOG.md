@@ -1,4 +1,4 @@
---
+---
 
 ## 1
 
@@ -30,7 +30,8 @@
 
 - $MYQVIMRC is now a file named `qnvim.vim` in the same directory as $MYVIMRC
 
---
+
+---
 
 ## 0
 
@@ -43,4 +44,4 @@
     whole message by hovering the mouse over it
 
 
---
+---
