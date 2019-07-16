@@ -1577,49 +1577,6 @@ QMap<QChar, int> diff_match_patch::match_alphabet(const QString &pattern) {
 
 //  PATCH FUNCTIONS
 
-
-void diff_match_patch::patch_addContext(Patch &patch, const QString &text) {
-    if (text.isEmpty()) {
-        return;
-    }
-    QString pattern = safeMid(text, patch.start2, patch.length1);
-    int padding = 0;
-
-    // Look for the first and last matches of pattern in text.  If two different
-    // matches are found, increase the pattern length.
-    while (text.indexOf(pattern) != text.lastIndexOf(pattern)
-            && pattern.length() < Match_MaxBits - Patch_Margin - Patch_Margin) {
-        padding += Patch_Margin;
-        pattern = safeMid(text, std::max(0, patch.start2 - padding),
-                std::min(text.length(), patch.start2 + patch.length1 + padding)
-                - std::max(0, patch.start2 - padding));
-    }
-    // Add one chunk for good luck.
-    padding += Patch_Margin;
-
-    // Add the prefix.
-    QString prefix = safeMid(text, std::max(0, patch.start2 - padding),
-            patch.start2 - std::max(0, patch.start2 - padding));
-    if (!prefix.isEmpty()) {
-        patch.diffs.prepend(Diff(EQUAL, prefix));
-    }
-    // Add the suffix.
-    QString suffix = safeMid(text, patch.start2 + patch.length1,
-            std::min(text.length(), patch.start2 + patch.length1 + padding)
-            - (patch.start2 + patch.length1));
-    if (!suffix.isEmpty()) {
-        patch.diffs.append(Diff(EQUAL, suffix));
-    }
-
-    // Roll back the start points.
-    patch.start1 -= prefix.length();
-    patch.start2 -= prefix.length();
-    // Extend the lengths.
-    patch.length1 += prefix.length() + suffix.length();
-    patch.length2 += prefix.length() + suffix.length();
-}
-
-
 QList<Patch> diff_match_patch::patch_make(const QString &text1,
         const QString &text2) {
     // Check for null inputs.
@@ -1706,7 +1663,6 @@ QList<Patch> diff_match_patch::patch_make(const QString &text1,
                 if (aDiff.text.length() >= 2 * Patch_Margin) {
                     // Time for a new patch.
                     if (!patch.diffs.isEmpty()) {
-                        patch_addContext(patch, prepatch_text);
                         patches.append(patch);
                         patch = Patch();
                         // Unlike Unidiff, our patch lists have a rolling context.
@@ -1730,7 +1686,6 @@ QList<Patch> diff_match_patch::patch_make(const QString &text1,
     }
     // Pick up the leftover patch if not empty.
     if (!patch.diffs.isEmpty()) {
-        patch_addContext(patch, prepatch_text);
         patches.append(patch);
     }
 

@@ -490,16 +490,6 @@ class diff_match_patch {
 
 	//  PATCH FUNCTIONS
 
-
-	/**
-	 * Increase the context until it is unique,
-	 * but don't let the pattern expand beyond Match_MaxBits.
-	 * @param patch The patch to grow.
-	 * @param text Source text.
-	 */
-	protected:
-	void patch_addContext(Patch &patch, const QString &text);
-
 	/**
 	 * Compute a list of patches to turn text1 into text2.
 	 * A set of diffs will be computed.
