@@ -177,6 +177,10 @@ QNVimPlugin::~QNVimPlugin() {
 QString QNVimPlugin::filename(Core::IEditor *editor) const {
     if (not editor)
         return "";
+    qWarning() << 1;
+    qWarning() << (qulonglong)editor;
+    qWarning() << editor;
+    qWarning() << editor->document();
     QString filename = editor->document()->filePath().toString();
     if (filename.isEmpty())
         filename = editor->document()->displayName();
@@ -266,11 +270,9 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
     mCursor.setX(col);
     mVCursor.setY(vLine);
     mVCursor.setX(vCol);
-    connect(mNVim->api2()->nvim_command(
-                mNVim->encode(QString("buffer %1|normal! \x03%3G%4|%2%5G%6|").arg(mBuffers[filename(editor)]).arg(visualCommand)
-                              .arg(vLine).arg(vCol).arg(line).arg(col))),
-            &NeovimQt::MsgpackRequest::finished, [=]() {
-    });
+    mNVim->api2()->nvim_command(mNVim->encode(QString("buffer %1|normal! \x03%3G%4|%2%5G%6|")
+                .arg(mBuffers[filename(editor)]).arg(visualCommand)
+                .arg(vLine).arg(vCol).arg(line).arg(col)));
 }
 
 void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callback) {
@@ -379,15 +381,16 @@ void QNVimPlugin::syncFromVim() {
         return;
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     unsigned long long syncCoutner = ++mSyncCounter;
+    QString filename = this->filename(editor);
     connect(mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap]"),
         &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
         if (mSyncCounter != syncCoutner)
             return;
-        if (not mBuffers.contains(filename(editor))) {
+        if (not mBuffers.contains(filename)) {
             return;
         }
-        int bufferNumber = mBuffers[filename(editor)];
+        int bufferNumber = mBuffers[filename];
         if (state[0].toString().toLong() != bufferNumber)
             return;
         unsigned long long changedtick = state[1].toULongLong();
@@ -410,7 +413,7 @@ void QNVimPlugin::syncFromVim() {
         qWarning() << "QNVimPlugin::syncFromVim";
         connect(mNVim->api2()->nvim_buf_get_lines(bufferNumber, 0, -1, true),
                 &NeovimQt::MsgpackRequest::finished, [=](quint32, quint64, const QVariant &lines) {
-            if (not mBuffers.contains(filename(editor))) {
+            if (not mBuffers.contains(filename)) {
                 return;
             }
 
