@@ -20,10 +20,14 @@
 #include <neovimconnector.h>
 #include <msgpackrequest.h>
 #include <utils/fancylineedit.h>
+#include <projectexplorer/project.h>
+#include <projectexplorer/session.h>
+#include <utils/fileutils.h>
 
 #include <QAction>
 #include <QApplication>
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QLabel>
 #include <QMainWindow>
@@ -32,11 +36,11 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QScrollBar>
+#include <QStandardPaths>
 #include <QTextBlock>
 #include <QTextEdit>
 #include <QThread>
 #include <QtMath>
-#include <QStandardPaths>
 
 namespace QNVim {
 namespace Internal {
@@ -177,10 +181,6 @@ QNVimPlugin::~QNVimPlugin() {
 QString QNVimPlugin::filename(Core::IEditor *editor) const {
     if (not editor)
         return "";
-    qWarning() << 1;
-    qWarning() << (qulonglong)editor;
-    qWarning() << editor;
-    qWarning() << editor->document();
     QString filename = editor->document()->filePath().toString();
     if (filename.isEmpty())
         filename = editor->document()->displayName();
@@ -287,7 +287,6 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
     int col = mNVim->encode(text.left(cursorPosition).section('\n', -1)).length() + 1;
 
     if (mText != text) {
-        qWarning() << "QNVimPlugin::syncToVim";
         int bufferNumber = mBuffers[filename(editor)];
         connect(mNVim->api2()->nvim_buf_set_lines(bufferNumber, 0, -1, true, text.toUtf8().split('\n')),
                 &NeovimQt::MsgpackRequest::finished, [=]() {
@@ -297,7 +296,6 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
                     callback();
             });
         });
-        // patchCommand += QString("i\x07u\x03')|set nopaste|call cursor(%1,%2)\n").arg(line).arg(col);
     }
     else if (callback)
         callback();
@@ -493,6 +491,7 @@ bool QNVimPlugin::initialize() {
             "nvim");
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         mNVim->api2()->nvim_command(mNVim->encode(QString("\
+let g:QNVIM_always_text=v:true\n\
 let g:neovim_channel=%1\n\
 execute \"command -bar Build call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
 execute \"command -bar BuildProject call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
@@ -513,13 +512,13 @@ execute \"command -bar DebugContinue call rpcnotify(%1, 'Gui', 'triggerCommand',
 execute \"command -bar QMake call rpcnotify(%1, 'Gui', 'triggerCommand', 'Qt4Builder.RunQMake')\"\n\
 execute \"command -bar Target call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.SelectTargetQuick')\"\n\
 \
-execute \"autocmd BufReadCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufReadCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
-execute \"autocmd TermOpen * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'TermOpen', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
-execute \"autocmd BufWriteCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)|set nomodified\"\n\
-execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
-execute \"autocmd BufDelete * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
-execute \"autocmd BufHidden * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufHidden', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
-execute \"autocmd BufWipeout * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden)\"\n\
+execute \"autocmd BufReadCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufReadCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
+execute \"autocmd TermOpen * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'TermOpen', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
+execute \"autocmd BufWriteCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)|set nomodified\"\n\
+execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
+execute \"autocmd BufDelete * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
+execute \"autocmd BufHidden * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufHidden', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
+execute \"autocmd BufWipeout * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
 execute \"autocmd FileType help echom 123|set modifiable|read <afile>|set nomodifiable\"\n\
 \
 function! SetCursor(line, col)\n\
@@ -674,8 +673,19 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
     if (not widget)
         return;
 
-    if (not qobject_cast<TextEditor::TextEditorWidget *>(widget))
+
+    ProjectExplorer::Project *project = ProjectExplorer::SessionManager::projectForFile(
+            Utils::FileName::fromString(filename));
+    if (project) {
+        QString projectDirectory = project->projectDirectory().toString();
+        if (not projectDirectory.isEmpty())
+            mNVim->api2()->nvim_command(mNVim->encode(QString("cd %1").arg(projectDirectory)));
+    }
+
+    if (not qobject_cast<TextEditor::TextEditorWidget *>(widget)) {
+        mNumbersColumn->setEditor(NULL);
         return;
+    }
     TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
 
     if (mEditors.contains(filename)) {
@@ -801,6 +811,8 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             QString bufferType = mNVim->decode(methodArgs[3].toByteArray());
             bool bufferListed = methodArgs[4].toInt();
             QString bufferHidden = mNVim->decode(methodArgs[5].toByteArray());
+            bool alwaysText = methodArgs[6].toInt();
+            qWarning() << alwaysText;
 
             if (cmd == "BufReadCmd" or cmd == "TermOpen") {
                 mBufferType[buffer] = bufferType;
@@ -817,8 +829,6 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             else if (cmd == "BufWriteCmd") {
                 if (mBuffers.values().contains(buffer)) {
                     QString currentFilename = mFilenames[buffer];
-                    qWarning() << 123 << currentFilename;
-                    qWarning() << (mEditors[currentFilename]->document()->save(nullptr, filename));
                     if (mEditors[currentFilename]->document()->save(nullptr, filename)) {
                         if (currentFilename != filename) {
                             mEditors.remove(currentFilename);
@@ -844,12 +854,20 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                     if (mEditors.contains(filename)) {
                         if (Core::EditorManager::currentEditor() != mEditors[filename]) {
                             settingBufferFromVim = true;
-                            Core::EditorManager::activateEditor(mEditors[filename]);
+                            Core::EditorManager::activateEditor(
+                                    mEditors[filename]);
                         }
                     }
                     else {
-                        if (bufferType.isEmpty())
-                            Core::EditorManager::openEditor(filename);
+                        if (bufferType.isEmpty()) {
+                            QFileInfo fileInfo = QFileInfo(filename);
+                            if (alwaysText) {
+                                if ((QStringList() << "js" << "qml" << "cpp" << "c" << "cc" << "hpp" << "h" << "pro").contains(fileInfo.suffix(), Qt::CaseInsensitive))
+                                    Core::EditorManager::openEditor(filename);
+                                else
+                                    Core::EditorManager::openEditor(filename, "Core.PlainTextEditor");
+                            }
+                        }
                         else {
                             Core::IEditor *editor(nullptr);
                             if (bufferType == "terminal")

@@ -13,16 +13,20 @@
 class QPlainTextEdit;
 
 namespace Core {
-class IEditor;
+    class IEditor;
+}
+
+namespace ProjectExplorer {
+    class Project;
 }
 
 namespace TextEditor {
-class TextEditorWidget;
+    class TextEditorWidget;
 }
 
 namespace NeovimQt {
-class NeovimConnector;
-class InputConv;
+    class NeovimConnector;
+    class InputConv;
 }
 
 namespace QNVim {

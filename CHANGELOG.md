@@ -2,6 +2,14 @@
 
 ## 1
 
+### 1.1.0    (2019-07-16)
+
+- If `QNVIM_always_text` is set, it'll always open files opened by neovim with
+    a text editor (avoid openning resource editor for example)
+- Fixed a segmentation fault that happened when `Open With` menu was used
+- Automatically run `cd` (change directory) in neovim when files changes in
+    Qt Creator. It runs `cd` with the directory of the project (not the file).
+
 ### 1.0.2    (2019-07-16)
 
 - Fixed a segmentation fault which happened after exiting some special terminal
