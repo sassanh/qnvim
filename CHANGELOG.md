@@ -11,6 +11,8 @@
     Qt Creator status line
 - Addressed all compilation warnings (except for diff_match_patch files)
 - `:e` won't break editor state anymore
+- Support almost all buffer types (gina, fugitive, etc)
+- Fixed lots of small bugs
 
 ### 1.1.0    (2019-07-16)
 
