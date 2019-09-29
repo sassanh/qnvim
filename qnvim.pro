@@ -4,9 +4,11 @@ DEFINES += QNVIM_LIBRARY
 # QNVim files
 
 SOURCES += qnvimplugin.cpp \
-    ../qnvim/diff_match_patch.cpp
+    ../qnvim/diff_match_patch.cpp \
+    numberscolumn.cpp
 
 HEADERS += qnvimplugin.h \
+    numberscolumn.h \
     qnvim_global.h \
     qnvimconstants.h \
     diff_match_patch.h

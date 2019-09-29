@@ -3,7 +3,7 @@
 namespace QNVim {
 namespace Constants {
 
-const char ACTION_ID[] = "QNVim.Action";
+const char TOGGLE_ID[] = "QNVim.Toggle";
 const char MENU_ID[] = "QNVim.Menu";
 
 } // namespace QNVim

@@ -58,6 +58,8 @@ nnoremap <silent> <d-t> :Target<cr>
 nnoremap <silent> <a-cr> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'TextEditor.QuickFix')<cr>
 nnoremap <silent> <d-,> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Options')<cr>
 
+nnoremap <silent> <a-V><a-V> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QNVim.Toggle')<cr>
+
 unmap <tab>
 
 set norelativenumber

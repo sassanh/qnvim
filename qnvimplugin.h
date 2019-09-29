@@ -1,10 +1,10 @@
 #pragma once
 
 #include "qnvim_global.h"
+#include "numberscolumn.h"
 #include <QColor>
 #include <QPoint>
 #include <QRect>
-#include <QWidget>
 #include <QMutex>
 
 #include <extensionsystem/iplugin.h>
@@ -20,10 +20,6 @@ namespace ProjectExplorer {
     class Project;
 }
 
-namespace TextEditor {
-    class TextEditorWidget;
-}
-
 namespace NeovimQt {
     class NeovimConnector;
     class InputConv;
@@ -31,26 +27,6 @@ namespace NeovimQt {
 
 namespace QNVim {
 namespace Internal {
-
-class NumbersColumn : public QWidget
-{
-    Q_OBJECT
-    bool mNumber;
-    TextEditor::TextEditorWidget *mEditor;
-
-public:
-    NumbersColumn();
-
-    void setEditor(TextEditor::TextEditorWidget *);
-    void setNumber(bool);
-
-protected:
-    void paintEvent(QPaintEvent *event);
-    bool eventFilter(QObject *, QEvent *);
-
-private:
-    void updateGeometry();
-};
 
 class QNVimPlugin : public ExtensionSystem::IPlugin {
     Q_OBJECT
@@ -85,9 +61,10 @@ private:
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
 
-    void initializeBuffer(long, QString);
+    void initializeBuffer(int);
     void handleNotification(const QByteArray &, const QVariantList &);
     void redraw(const QVariantList &);
+    void updateCursorSize();
 
     bool mEnabled;
 
@@ -98,10 +75,8 @@ private:
     NeovimQt::NeovimConnector *mNVim;
     NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges;
-    QMap<QString, int> mBuffers;
-    QMap<QString, Core::IEditor *> mEditors;
-    QMap<int, QString> mFilenames;
-    QMap<QString, bool> mInitialized;
+    QMap<Core::IEditor *, int> mBuffers;
+    QMap<int, Core::IEditor *> mEditors;
     QMap<int, bool> mChangedTicks;
     QMap<int, QString> mBufferType;
 
@@ -122,7 +97,7 @@ private:
     QByteArray mUIMode, mMode;
     QPoint mCursor, mVCursor;
 
-    bool settingBufferFromVim;
+    int settingBufferFromVim;
     unsigned long long mSyncCounter;
 };
 

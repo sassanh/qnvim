@@ -2,6 +2,16 @@
 
 ## 1
 
+### 1.2.0    (2019-09-28)
+
+- Zooming text editor (ctrl + mouse wheel) updates block cursor width now
+- Relative number column fixed (It used to render weirdly)
+- Zooming text editor doesn't ruin relative number column anymore
+- Fixed toggle action not removing command-line and not showing native
+    Qt Creator status line
+- Addressed all compilation warnings (except for diff_match_patch files)
+- `:e` won't break editor state anymore
+
 ### 1.1.0    (2019-07-16)
 
 - If `QNVIM_always_text` is set, it'll always open files opened by neovim with
