@@ -11,8 +11,8 @@ It runs an instance of Neovim inside Qt Creator, so it's able to run your `init.
 
 # Status
 It's in beta but it's mostly stable and usable, for last few months I've been using Qt Creator only with this plugin with no pain. Currently these are the known issues:
-1. It can't show some special buffers (buffer types like quickfix, special buffers some plugins create, etc, plugins such as gundo, tagbar, gitgutter, etc)
-2. It should use vim highlights for buffers that Qt Creator doens't support. (like vim helpfiles and many others.)
+1. It doesn't support splits nor windows
+1. It should use vim highlights for buffers that Qt Creator doesn't support. (like vim helpfiles and many others.)
 
 All my 149 plugins installed in neovim work alright except a few that relate on highlights (Qt Creator highlights C++ and QML better than any vim plugin, so it's totally alright.) and those that rely on special buffers. (Work is in progress to handle all types of buffers.)
 
@@ -23,10 +23,10 @@ Please let me know if you find any problems and please contribute to this projec
 
 If you build the head of master branch, then you can use qnvim only with your build, if you wanna use qnvim with the official release of Qt Creator you should checkout the tag that matches your installed Qt Creator.
 
-2. Clone and compile https://github.com/equalsraf/neovim-qt
-3. Install devel package of msgpack.
-4. Open the `qnvim.pro` file as a project in your offical Qt Creator (not the one you built.)
-5. Setup locations to Qt Creator build and neovim-qt in `qnvim.pro` file.
+1. Clone and compile https://github.com/equalsraf/neovim-qt
+1. Install devel package of msgpack.
+1. Open the `qnvim.pro` file as a project in your offical Qt Creator (not the one you built.)
+1. Setup locations to Qt Creator build and neovim-qt in `qnvim.pro` file.
 Like this:
 ```
 isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = "<PATH_TO_QT_CREATOR_CLONED_REPO>"
@@ -42,12 +42,12 @@ INCLUDEPATH += /home_direcotry/packages/neovim-qt/src /usr/local/Cellar/msgpack/
 LIBS += -L/home_direcotry/packages/neovim-qt/build/lib -lneovim-qt -lneovim-qt-gui -L/usr/local/Cellar/msgpack/2.1.5/lib -lmsgpackc
 ```
 
-6. Setup locations to your Qt Creator build in Projects tab.
+1. Setup locations to your Qt Creator build in Projects tab.
 In the Qt Creator go to `Projects` Tab/Mode (you can select it in the left column) Active project should be `qnvim`, and in Build & Run `Desktop ...` should be selected. Under `Desktop ...` select `Run` and in the right side in the `Run` section set Executable to `<full path to>/qt-creator-build/bin/qtcreator` and working directory to `<full path to>/qt-creator-build/bin`
 
-7. Build and run the project.
+1. Build and run the project.
 
-8. Put the built library in the location that Qt Creator expects plugins (it varies based on your OS) and use the built Qt Creator instead of the official version. (Or if you checked out the tag that corresponds to your installed Qt Creator, then you can use your own installed Qt Creator.)
+1. Put the built library in the location that Qt Creator expects plugins (it varies based on your OS) and use the built Qt Creator instead of the official version. (Or if you checked out the tag that corresponds to your installed Qt Creator, then you can use your own installed Qt Creator.)
 
 ## Updating
 
