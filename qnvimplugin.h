@@ -1,16 +1,62 @@
+/****************************************************************************
+**
+** Copyright (C) 2018-2019 Sassan Haradji
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** MIT License
+**
+** Permission is hereby granted, free of charge, to any person obtaining a copy
+** of this software and associated documentation files (the "Software"), to deal
+** in the Software without restriction, including without limitation the rights
+** to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+** copies of the Software, and to permit persons to whom the Software is
+** furnished to do so, subject to the following conditions:
+**
+** The above copyright notice and this permission notice shall be included in all
+** copies or substantial portions of the Software.
+**
+** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+** LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+** SOFTWARE.
+****************************************************************************/
+
 #pragma once
 
 #include "qnvim_global.h"
-#include "numberscolumn.h"
-#include <QColor>
-#include <QPoint>
-#include <QRect>
-#include <QMutex>
+#include "numbers_column.h"
 
 #include <extensionsystem/iplugin.h>
 #include <texteditor/plaintexteditorfactory.h>
 
+#include <QColor>
+#include <QPoint>
+#include <QRect>
+
+QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
+QT_END_NAMESPACE
 
 namespace Core {
     class IEditor;
@@ -27,6 +73,8 @@ namespace NeovimQt {
 
 namespace QNVim {
 namespace Internal {
+
+class NumbersColumn;
 
 class QNVimPlugin : public ExtensionSystem::IPlugin {
     Q_OBJECT
@@ -66,39 +114,47 @@ private:
     void redraw(const QVariantList &);
     void updateCursorSize();
 
-    bool mEnabled;
+    bool mEnabled = true;
 
-    QMutex mSyncMutex;
-
-    QPlainTextEdit *mCMDLine;
-    NumbersColumn *mNumbersColumn;
-    NeovimQt::NeovimConnector *mNVim;
+    QPlainTextEdit *mCMDLine = nullptr;
+    NumbersColumn *mNumbersColumn = nullptr;
+    NeovimQt::NeovimConnector *mNVim = nullptr;
     NeovimQt::InputConv *mInputConv;
-    unsigned mVimChanges;
+    unsigned mVimChanges = 0;
     QMap<Core::IEditor *, int> mBuffers;
     QMap<int, Core::IEditor *> mEditors;
     QMap<int, bool> mChangedTicks;
     QMap<int, QString> mBufferType;
 
     QString mText;
-    int mWidth, mHeight;
-    QColor mForegroundColor, mBackgroundColor, mSpecialColor;
-    QColor mCursorColor;
-    bool mBusy, mMouse, mNumber, mRelativeNumber, mWrap;
+    int mWidth = 80;
+    int mHeight = 35;
+    QColor mForegroundColor = Qt::black;
+    QColor mBackgroundColor = Qt::white;
+    QColor mSpecialColor;
+    QColor mCursorColor = Qt::white;
+    bool mBusy = false;
+    bool mMouse = false;
+    bool mNumber = true;
+    bool mRelativeNumber = true;
+    bool mWrap = false;
 
-    bool mCMDLineVisible;
-    QString mCMDLineContent, mCMDLineDisplay;
+    bool mCMDLineVisible = false;
+    QString mCMDLineContent;
+    QString mCMDLineDisplay;
     QString mMessageLineDisplay;
     int mCMDLinePos;
     QChar mCMDLineFirstc;
     QString mCMDLinePrompt;
     int mCMDLineIndent;
 
-    QByteArray mUIMode, mMode;
-    QPoint mCursor, mVCursor;
+    QByteArray mUIMode = "normal";
+    QByteArray mMode = "n";
+    QPoint mCursor;
+    QPoint mVCursor;
 
-    int settingBufferFromVim;
-    unsigned long long mSyncCounter;
+    int mSettingBufferFromVim = 0;
+    unsigned long long mSyncCounter = 0;
 };
 
 class HelpEditorFactory : public TextEditor::PlainTextEditorFactory {

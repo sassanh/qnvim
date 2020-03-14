@@ -2,6 +2,10 @@
 
 ## 1
 
+### 1.2.1    (2019-04-30)
+
+- Fixed `number` not showing correctly when `relativenumber` was enabled
+
 ### 1.2.0    (2019-09-28)
 
 - Zooming text editor (ctrl + mouse wheel) updates block cursor width now
