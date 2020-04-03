@@ -105,6 +105,10 @@ protected:
 
     void triggerCommand(const QByteArray &);
 
+private slots:
+    // Save cursor flash time to variable instead of changing real value
+    void saveCursorFlashTime(int cursorFlashTime);
+
 private:
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
@@ -155,6 +159,8 @@ private:
 
     int mSettingBufferFromVim = 0;
     unsigned long long mSyncCounter = 0;
+
+    int mSavedCursorFlashTime = -1;
 };
 
 class HelpEditorFactory : public TextEditor::PlainTextEditorFactory {
