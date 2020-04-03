@@ -31,5 +31,5 @@ isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
 
 include($$IDE_SOURCE_TREE/src/qtcreatorplugin.pri)
 
-INCLUDEPATH += $$NEOVIM_SOURCE_TREE/src
+INCLUDEPATH += $$NEOVIM_QT_SOURCE_TREE/src
 LIBS += -L$$NEOVIM_BUILD_TREE/lib/ -lneovim-qt -lneovim-qt-gui -l msgpackc
