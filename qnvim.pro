@@ -27,9 +27,9 @@ isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
 ##    "%LOCALAPPDATA%\QtProject\qtcreator" on Windows Vista and later
 ##    "$XDG_DATA_HOME/data/QtProject/qtcreator" or "~/.local/share/data/QtProject/qtcreator" on Linux
 ##    "~/Library/Application Support/QtProject/Qt Creator" on macOS
-USE_USER_DESTDIR = yes
+##USE_USER_DESTDIR = yes
 
 include($$IDE_SOURCE_TREE/src/qtcreatorplugin.pri)
 
-INCLUDEPATH += /home/sassan/Development/neovim-qt/src/
-LIBS += -L/home/sassan/Development/neovim-qt/build/lib/ -lneovim-qt -lneovim-qt-gui -l msgpackc
+INCLUDEPATH += $$NEOVIM_QT_SOURCE_TREE/src
+LIBS += -L$$NEOVIM_QT_BUILD_TREE/lib/ -lneovim-qt -lneovim-qt-gui -l msgpackc
