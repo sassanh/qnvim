@@ -82,6 +82,7 @@
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QStandardPaths>
+#include <QStyleHints>
 #include <QTextBlock>
 #include <QTextEdit>
 #include <QThread>
@@ -413,6 +414,15 @@ void QNVimPlugin::triggerCommand(const QByteArray &commandId)
     Core::ActionManager::command(commandId.constData())->action()->trigger();
 }
 
+void QNVimPlugin::saveCursorFlashTime(int cursorFlashTime)
+{
+    mSavedCursorFlashTime = cursorFlashTime;
+
+    disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QNVimPlugin::saveCursorFlashTime);
+    QApplication::setCursorFlashTime(0);
+    connect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QNVimPlugin::saveCursorFlashTime);
+}
+
 bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
 {
     Q_UNUSED(arguments)
@@ -439,6 +449,8 @@ bool QNVimPlugin::initialize()
     mCMDLine->setFont(TextEditor::TextEditorSettings::instance()->fontSettings().font());
 
     qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->hide();
+
+    saveCursorFlashTime(QApplication::cursorFlashTime());
 
     auto action = new QAction(tr("Toggle QNVim"), this);
     Core::Command *cmd = Core::ActionManager::registerAction(action, Constants::TOGGLE_ID,
@@ -594,6 +606,9 @@ void QNVimPlugin::toggleQNVim()
     } else {
         qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->show();
         mCMDLine->deleteLater();
+
+        disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QNVimPlugin::saveCursorFlashTime);
+        QApplication::setCursorFlashTime(mSavedCursorFlashTime);
 
         mNumbersColumn->deleteLater();
         connect(mNVim->api2()->nvim_command("q!"), &NeovimQt::MsgpackRequest::finished,
