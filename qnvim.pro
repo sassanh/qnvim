@@ -32,4 +32,4 @@ isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
 include($$IDE_SOURCE_TREE/src/qtcreatorplugin.pri)
 
 INCLUDEPATH += $$NEOVIM_QT_SOURCE_TREE/src
-LIBS += -L$$NEOVIM_BUILD_TREE/lib/ -lneovim-qt -lneovim-qt-gui -l msgpackc
+LIBS += -L$$NEOVIM_QT_BUILD_TREE/lib/ -lneovim-qt -lneovim-qt-gui -l msgpackc
