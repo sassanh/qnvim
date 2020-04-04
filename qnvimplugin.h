@@ -85,7 +85,6 @@ public:
     ~QNVimPlugin();
 
     bool initialize(const QStringList &, QString *);
-    bool initialize();
     void extensionsInitialized();
     ShutdownFlag aboutToShutdown();
 
@@ -110,6 +109,7 @@ private slots:
     void saveCursorFlashTime(int cursorFlashTime);
 
 private:
+    void initialize(bool reopen);
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
 

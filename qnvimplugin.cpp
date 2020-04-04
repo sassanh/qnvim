@@ -431,10 +431,127 @@ bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
     new HelpEditorFactory();
     new TerminalEditorFactory();
 
-    return initialize();
+    auto action = new QAction(tr("Toggle QNVim"), this);
+    Core::Command *cmd = Core::ActionManager::registerAction(action, Constants::TOGGLE_ID,
+                                                             Core::Context(Core::Constants::C_GLOBAL));
+    cmd->setDefaultKeySequence(QKeySequence(tr("Alt+Shift+V,Alt+Shift+V")));
+    connect(action, &QAction::triggered, this, &QNVimPlugin::toggleQNVim);
+
+    Core::ActionContainer *menu = Core::ActionManager::createMenu(Constants::MENU_ID);
+    menu->menu()->setTitle(tr("QNVim"));
+    menu->addAction(cmd);
+    Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addMenu(menu);
+
+    initialize(false);
+
+    return true;
 }
 
-bool QNVimPlugin::initialize()
+void QNVimPlugin::extensionsInitialized()
+{
+    // Retrieve objects from the plugin manager's object pool
+    // In the extensionsInitialized function, a plugin can be sure that all
+    // plugins that depend on it are completely initialized.
+}
+
+ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown()
+{
+    mEnabled = false;
+    // Save settings
+    // Disconnect from signals that are not needed during shutdown
+    // Hide UI (if you add UI that is not in the main window directly)
+    return SynchronousShutdown;
+}
+
+bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
+{
+    if (!mEnabled)
+        return false;
+    /* if (qobject_cast<QLabel *>(object)) */
+    if (qobject_cast<TextEditor::TextEditorWidget *>(object) or qobject_cast<QPlainTextEdit *>(object)) {
+        if (event->type() == QEvent::Resize) {
+            QTimer::singleShot(100, [=]() { fixSize(); });
+            return false;
+        }
+    }
+    if (event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        auto modifiers = QGuiApplication::keyboardModifiers();
+        QString text = keyEvent->text();
+#ifdef Q_OS_MACOS
+        if (QChar(keyEvent->key()).isLetterOrNumber())
+            text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
+#endif
+        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        mNVim->api2()->nvim_input(mNVim->encode(key));
+        return true;
+    } else if (event->type() == QEvent::ShortcutOverride) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        auto modifiers = QGuiApplication::keyboardModifiers();
+        QString text = keyEvent->text();
+#ifdef Q_OS_MACOS
+        if (modifiers & Qt::AltModifier and QChar(keyEvent->key()).isLetterOrNumber())
+            text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
+#endif
+        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        if (keyEvent->key() == Qt::Key_Escape) {
+            mNVim->api2()->nvim_input(mNVim->encode(key));
+        } else {
+            keyEvent->accept();
+        }
+        return true;
+    }
+    return false;
+}
+
+void QNVimPlugin::toggleQNVim()
+{
+    qWarning() << "QNVimPlugin::toggleQNVim";
+    mEnabled = !mEnabled;
+    if (mEnabled) {
+        initialize(true);
+    } else {
+        qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->show();
+        mCMDLine->deleteLater();
+
+        disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QNVimPlugin::saveCursorFlashTime);
+        QApplication::setCursorFlashTime(mSavedCursorFlashTime);
+
+        mNumbersColumn->deleteLater();
+        connect(mNVim->api2()->nvim_command("q!"), &NeovimQt::MsgpackRequest::finished,
+                [=]() {
+            mNVim->deleteLater();
+            mNVim = nullptr;
+        });
+        disconnect(Core::EditorManager::instance(), &Core::EditorManager::editorAboutToClose,
+                this, &QNVimPlugin::editorAboutToClose);
+        disconnect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
+                this, &QNVimPlugin::editorOpened);
+        const auto keys = mEditors.keys();
+        for (const auto key: keys) {
+            Core::IEditor *editor = mEditors[key];
+            if (!editor)
+                continue;
+
+            QWidget *widget = editor->widget();
+            if (!widget)
+                continue;
+
+            if (!qobject_cast<TextEditor::TextEditorWidget *>(widget))
+                continue;
+
+            TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(widget);
+            textEditor->setCursorWidth(1);
+            widget->removeEventFilter(this);
+            mEditors.remove(key);
+        }
+        mBuffers.clear();
+        mChangedTicks.clear();
+        mBufferType.clear();
+    }
+}
+
+void QNVimPlugin::initialize(bool reopen)
 {
     qWarning() << "QNVimPlugin::initialize";
     mCMDLine = new QPlainTextEdit;
@@ -451,17 +568,6 @@ bool QNVimPlugin::initialize()
     qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->hide();
 
     saveCursorFlashTime(QApplication::cursorFlashTime());
-
-    auto action = new QAction(tr("Toggle QNVim"), this);
-    Core::Command *cmd = Core::ActionManager::registerAction(action, Constants::TOGGLE_ID,
-                                                             Core::Context(Core::Constants::C_GLOBAL));
-    cmd->setDefaultKeySequence(QKeySequence(tr("Alt+Shift+V,Alt+Shift+V")));
-    connect(action, &QAction::triggered, this, &QNVimPlugin::toggleQNVim);
-
-    Core::ActionContainer *menu = Core::ActionManager::createMenu(Constants::MENU_ID);
-    menu->menu()->setTitle(tr("QNVim"));
-    menu->addAction(cmd);
-    Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addMenu(menu);
 
     connect(Core::EditorManager::instance(), &Core::EditorManager::editorAboutToClose,
             this, &QNVimPlugin::editorAboutToClose);
@@ -531,117 +637,13 @@ autocmd VimEnter * let $MYQVIMRC=substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 
         });
         connect(request, &NeovimQt::MsgpackRequest::finished, [=]() {
             qWarning() << "Neovim: attached!";
+            if (reopen)
+                QNVimPlugin::editorOpened(Core::EditorManager::currentEditor());
         });
 
         mNVim->api2()->nvim_subscribe("Gui");
         mNVim->api2()->nvim_subscribe("api-buffer-updates");
     });
-
-    return true;
-}
-
-void QNVimPlugin::extensionsInitialized()
-{
-    // Retrieve objects from the plugin manager's object pool
-    // In the extensionsInitialized function, a plugin can be sure that all
-    // plugins that depend on it are completely initialized.
-}
-
-ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown()
-{
-    mEnabled = false;
-    // Save settings
-    // Disconnect from signals that are not needed during shutdown
-    // Hide UI (if you add UI that is not in the main window directly)
-    return SynchronousShutdown;
-}
-
-bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
-{
-    if (!mEnabled)
-        return false;
-    /* if (qobject_cast<QLabel *>(object)) */
-    if (qobject_cast<TextEditor::TextEditorWidget *>(object) or qobject_cast<QPlainTextEdit *>(object)) {
-        if (event->type() == QEvent::Resize) {
-            QTimer::singleShot(100, [=]() { fixSize(); });
-            return false;
-        }
-    }
-    if (event->type() == QEvent::KeyPress) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        auto modifiers = QGuiApplication::keyboardModifiers();
-        QString text = keyEvent->text();
-#ifdef Q_OS_MACOS
-        if (QChar(keyEvent->key()).isLetterOrNumber())
-            text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
-#endif
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
-        mNVim->api2()->nvim_input(mNVim->encode(key));
-        return true;
-    } else if (event->type() == QEvent::ShortcutOverride) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        auto modifiers = QGuiApplication::keyboardModifiers();
-        QString text = keyEvent->text();
-#ifdef Q_OS_MACOS
-        if (modifiers & Qt::AltModifier and QChar(keyEvent->key()).isLetterOrNumber())
-            text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
-#endif
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
-        if (keyEvent->key() == Qt::Key_Escape) {
-            mNVim->api2()->nvim_input(mNVim->encode(key));
-        } else {
-            keyEvent->accept();
-        }
-        return true;
-    }
-    return false;
-}
-
-void QNVimPlugin::toggleQNVim()
-{
-    qWarning() << "QNVimPlugin::toggleQNVim";
-    mEnabled = !mEnabled;
-    if (mEnabled) {
-        this->initialize();
-    } else {
-        qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->show();
-        mCMDLine->deleteLater();
-
-        disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QNVimPlugin::saveCursorFlashTime);
-        QApplication::setCursorFlashTime(mSavedCursorFlashTime);
-
-        mNumbersColumn->deleteLater();
-        connect(mNVim->api2()->nvim_command("q!"), &NeovimQt::MsgpackRequest::finished,
-                [=]() {
-            mNVim->deleteLater();
-            mNVim = nullptr;
-        });
-        disconnect(Core::EditorManager::instance(), &Core::EditorManager::editorAboutToClose,
-                this, &QNVimPlugin::editorAboutToClose);
-        disconnect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
-                this, &QNVimPlugin::editorOpened);
-        const auto keys = mEditors.keys();
-        for (const auto key: keys) {
-            Core::IEditor *editor = mEditors[key];
-            if (!editor)
-                continue;
-
-            QWidget *widget = editor->widget();
-            if (!widget)
-                continue;
-
-            if (!qobject_cast<TextEditor::TextEditorWidget *>(widget))
-                continue;
-
-            TextEditor::TextEditorWidget *textEditor = qobject_cast<TextEditor::TextEditorWidget *>(widget);
-            textEditor->setCursorWidth(1);
-            widget->removeEventFilter(this);
-            mEditors.remove(key);
-        }
-        mBuffers.clear();
-        mChangedTicks.clear();
-        mBufferType.clear();
-    }
 }
 
 void QNVimPlugin::editorOpened(Core::IEditor *editor)
@@ -659,7 +661,6 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor)
     QWidget *widget = editor->widget();
     if (!widget)
         return;
-
 
     auto project = ProjectExplorer::SessionManager::projectForFile(
     Utils::FilePath::fromString(filename));
