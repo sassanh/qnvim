@@ -28,7 +28,7 @@ Please let me know if you find any problems and please contribute to this projec
 1. Build Qt Creator from git repository, see instructions [here](https://wiki.qt.io/Building_Qt_Creator_from_Git). If you build the head of master branch, then you can use qnvim only with your build, if you wanna use qnvim with the official release of Qt Creator you should checkout the tag that matches your installed Qt Creator.
 2. Clone and compile [Neovim Qt](https://github.com/equalsraf/neovim-qt).
 3. Install devel package of msgpack.
-4. Setup locations to Qt Creator and Neovim Qt. You can manually edit it in `qnvim.pro` or pass `IDE_SOURCE_TREE`, `IDE_BUILD_TREE`, `NEOVIM_QT_SOURCE_TREE` and `NEOVIM_QT_BUILD_TREE` with corresponding paths to `qmake`. If you want to install this plugin user-wide you need to pass `USE_USER_DESTDIR` or uncomment in in `qnvim.pro`
+4. Setup locations to Qt Creator and Neovim Qt. You need to pass `IDE_SOURCE_TREE`, `IDE_BUILD_TREE`, `NEOVIM_QT_SOURCE_TREE` and `NEOVIM_QT_BUILD_TREE` with corresponding paths to `qmake`. Or you can set `QTC_SOURCE` (differs from `IDE_SOURCE_TREE`!), `QTC_BUILD`, `NEOVIM_QT_SOURCE_TREE` and `NEOVIM_QT_BUILD_TREE`. If you want to install this plugin user-wide you need to pass `USE_USER_DESTDIR` or uncomment in in `qnvim.pro`
 5. Build. You can just open `qnvim.pro` in Qt Creator and build the plugin from it. Or you can do it from CLI by executing the following in qnvim source tree:
 
 ```bash
