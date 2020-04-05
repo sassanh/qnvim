@@ -21,6 +21,14 @@ isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = $$(QTC_SOURCE)
 ## or set the QTC_BUILD environment variable, to override the default setting
 isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
 
+## Either set the NEOVIM_QT_SOURCE_TREE when running qmake,
+## or set the NEOVIM_QT_SOURCE_TREE environment variable, to override the default setting
+isEmpty(NEOVIM_QT_SOURCE_TREE): NEOVIM_QT_SOURCE_TREE = $$(NEOVIM_QT_SOURCE_TREE)
+
+## Either set the NEOVIM_QT_BUILD_TREE when running qmake,
+## or set the NEOVIM_QT_BUILD_TREE environment variable, to override the default setting
+isEmpty(NEOVIM_QT_BUILD_TREE): NEOVIM_QT_BUILD_TREE = $$(NEOVIM_QT_BUILD_TREE)
+
 ## uncomment to build plugin into user config directory
 ## <localappdata>/plugins/<ideversion>
 ##    where <localappdata> is e.g.
