@@ -442,6 +442,8 @@ bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
     menu->addAction(cmd);
     Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addMenu(menu);
 
+    qunsetenv("NVIM_LISTEN_ADDRESS");
+
     initialize(false);
 
     return true;
@@ -575,8 +577,7 @@ void QNVimPlugin::initialize(bool reopen)
             this, &QNVimPlugin::editorOpened);
 
     mNumbersColumn = new NumbersColumn();
-    mNVim = NeovimQt::NeovimConnector::spawn(QStringList() << "--cmd" << "let g:QNVIM=1",
-            "nvim");
+    mNVim = NeovimQt::NeovimConnector::spawn({"--cmd", "let g:QNVIM=1"});
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         mNVim->api2()->nvim_command(mNVim->encode(QString("\
 let g:QNVIM_always_text=v:true\n\
