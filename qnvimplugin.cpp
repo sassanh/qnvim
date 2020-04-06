@@ -482,13 +482,12 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
         if (QChar(keyEvent->key()).isLetterOrNumber())
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
-        mNVim->api2()->nvim_input(mNVim->encode(key));
-
         // Process text event in insert mode to show autocompletion
-        if (mMode.startsWith("i") and !text.isEmpty())
+        if (mMode.startsWith("i") and !text.isEmpty() and modifiers == Qt::ShiftModifier)
             return false;
 
+        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        mNVim->api2()->nvim_input(mNVim->encode(key));
         return true;
     } else if (event->type() == QEvent::ShortcutOverride) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
