@@ -483,7 +483,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
         // Process text event in insert mode to show autocompletion
-        if (mMode.startsWith("i") and !text.isEmpty() and modifiers == Qt::ShiftModifier)
+        if (mMode.startsWith("i") and !text.isEmpty() and (modifiers == Qt::ShiftModifier or modifiers == Qt::NoModifier))
             return false;
 
         QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
