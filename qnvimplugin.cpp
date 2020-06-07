@@ -92,7 +92,7 @@
 namespace QNVim {
 namespace Internal {
 
-QNVimPlugin::QNVimPlugin(): mInputConv(new NeovimQt::InputConv)
+QNVimPlugin::QNVimPlugin()
 {
 }
 
@@ -484,7 +484,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
         if (QChar(keyEvent->key()).isLetterOrNumber())
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        QString key = NeovimQt::Input::convertKey(*keyEvent);
         mNVim->api2()->nvim_input(mNVim->encode(key));
         return true;
     } else if (event->type() == QEvent::ShortcutOverride) {
@@ -495,7 +495,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
         if (modifiers & Qt::AltModifier and QChar(keyEvent->key()).isLetterOrNumber())
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        QString key = NeovimQt::Input::convertKey(*keyEvent);
         if (keyEvent->key() == Qt::Key_Escape) {
             mNVim->api2()->nvim_input(mNVim->encode(key));
         } else {
