@@ -92,7 +92,7 @@
 namespace QNVim {
 namespace Internal {
 
-QNVimPlugin::QNVimPlugin(): mInputConv(new NeovimQt::InputConv)
+QNVimPlugin::QNVimPlugin()
 {
 }
 
@@ -442,6 +442,8 @@ bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
     menu->addAction(cmd);
     Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addMenu(menu);
 
+    qunsetenv("NVIM_LISTEN_ADDRESS");
+
     initialize(false);
 
     return true;
@@ -483,10 +485,10 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
         // Process text event in insert mode to show autocompletion
-        if (mMode.startsWith("i") and !text.isEmpty() and (modifiers == Qt::ShiftModifier or modifiers == Qt::NoModifier))
+        if (mMode.startsWith('i'))
             return false;
 
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        QString key = NeovimQt::Input::convertKey(*keyEvent);
         mNVim->api2()->nvim_input(mNVim->encode(key));
         return true;
     } else if (event->type() == QEvent::ShortcutOverride) {
@@ -497,7 +499,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
         if (modifiers & Qt::AltModifier and QChar(keyEvent->key()).isLetterOrNumber())
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
-        QString key = mInputConv->convertKey(text, keyEvent->key(), modifiers);
+        QString key = NeovimQt::Input::convertKey(*keyEvent);
         if (keyEvent->key() == Qt::Key_Escape) {
             mNVim->api2()->nvim_input(mNVim->encode(key));
         } else {
@@ -579,8 +581,7 @@ void QNVimPlugin::initialize(bool reopen)
             this, &QNVimPlugin::editorOpened);
 
     mNumbersColumn = new NumbersColumn();
-    mNVim = NeovimQt::NeovimConnector::spawn(QStringList() << "--cmd" << "let g:QNVIM=1",
-            "nvim");
+    mNVim = NeovimQt::NeovimConnector::spawn({"--cmd", "let g:QNVIM=1"});
     connect(mNVim, &NeovimQt::NeovimConnector::ready, [=]() {
         mNVim->api2()->nvim_command(mNVim->encode(QString("\
 let g:QNVIM_always_text=v:true\n\

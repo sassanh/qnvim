@@ -21,6 +21,14 @@ isEmpty(IDE_SOURCE_TREE): IDE_SOURCE_TREE = $$(QTC_SOURCE)
 ## or set the QTC_BUILD environment variable, to override the default setting
 isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
 
+## Either set the NEOVIM_QT_SOURCE_TREE when running qmake,
+## or set the NEOVIM_QT_SOURCE_TREE environment variable, to override the default setting
+isEmpty(NEOVIM_QT_SOURCE_TREE): NEOVIM_QT_SOURCE_TREE = $$(NEOVIM_QT_SOURCE_TREE)
+
+## Either set the NEOVIM_QT_BUILD_TREE when running qmake,
+## or set the NEOVIM_QT_BUILD_TREE environment variable, to override the default setting
+isEmpty(NEOVIM_QT_BUILD_TREE): NEOVIM_QT_BUILD_TREE = $$(NEOVIM_QT_BUILD_TREE)
+
 ## uncomment to build plugin into user config directory
 ## <localappdata>/plugins/<ideversion>
 ##    where <localappdata> is e.g.
@@ -31,5 +39,5 @@ isEmpty(IDE_BUILD_TREE): IDE_BUILD_TREE = $$(QTC_BUILD)
 
 include($$IDE_SOURCE_TREE/src/qtcreatorplugin.pri)
 
-INCLUDEPATH += $$NEOVIM_QT_SOURCE_TREE/src
-LIBS += -L$$NEOVIM_QT_BUILD_TREE/lib/ -lneovim-qt -lneovim-qt-gui -lmsgpackc
+INCLUDEPATH += $$NEOVIM_QT_SOURCE_TREE/src /usr/local/Cellar/msgpack/3.2.1/include
+LIBS += -L$$NEOVIM_QT_BUILD_TREE/lib/ -L /usr/local/Cellar/msgpack/3.2.1/lib -lneovim-qt -lneovim-qt-gui -lmsgpackc

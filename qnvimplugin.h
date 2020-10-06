@@ -68,7 +68,6 @@ namespace ProjectExplorer {
 
 namespace NeovimQt {
     class NeovimConnector;
-    class InputConv;
 }
 
 namespace QNVim {
@@ -123,7 +122,6 @@ private:
     QPlainTextEdit *mCMDLine = nullptr;
     NumbersColumn *mNumbersColumn = nullptr;
     NeovimQt::NeovimConnector *mNVim = nullptr;
-    NeovimQt::InputConv *mInputConv;
     unsigned mVimChanges = 0;
     QMap<Core::IEditor *, int> mBuffers;
     QMap<int, Core::IEditor *> mEditors;
