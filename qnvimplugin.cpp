@@ -469,7 +469,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
 {
     if (!mEnabled)
         return false;
-    /* if (qobject_cast<QLabel *>(object)) */
+
     if (qobject_cast<TextEditor::TextEditorWidget *>(object) or qobject_cast<QPlainTextEdit *>(object)) {
         if (event->type() == QEvent::Resize) {
             QTimer::singleShot(100, [=]() { fixSize(); });
@@ -484,6 +484,10 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event)
         if (QChar(keyEvent->key()).isLetterOrNumber())
             text = modifiers & Qt::ShiftModifier ? QChar(keyEvent->key()) : QChar(keyEvent->key()).toLower();
 #endif
+        // Process text event in insert mode to show autocompletion
+        if (mMode.startsWith('i'))
+            return false;
+
         QString key = NeovimQt::Input::convertKey(*keyEvent);
         mNVim->api2()->nvim_input(mNVim->encode(key));
         return true;

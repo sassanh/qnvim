@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file. This projec
 
 [Full Changelog](https://github.com/crow-translate/crow-translate/compare/2.3.1...HEAD)
 
+**Added**
+
+- Automatic completion on typing.
+
 **Changed**
 
 - Fix `number` not showing correctly when `relativenumber` was enabled.
