@@ -3,13 +3,13 @@ DEFINES += QNVIM_LIBRARY
 
 # QNVim files
 
-SOURCES += qnvimplugin.cpp \
-    numbers_column.cpp \
+SOURCES += src/qnvimplugin.cpp \
+    src/numbers_column.cpp \
 
-HEADERS += qnvimplugin.h \
-    numbers_column.h \
-    qnvim_global.h \
-    qnvimconstants.h \
+HEADERS += src/qnvimplugin.h \
+    src/numbers_column.h \
+    src/qnvim_global.h \
+    src/qnvimconstants.h \
 
 # Qt Creator linking
 
