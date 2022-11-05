@@ -15,7 +15,7 @@ if (MINGW) # Windows MinGW
     set(QTC_DEV_MD5 "453ca164956623209e3889fd0bdc565a")
 elseif(MSVC) # Windows MSVC
     set(QTC_FILENAME "qtcreator-Windows-MSVC-1029797214.7z")
-    set(QTC_DEV_FILENAME "qtcreator-Windows-MSVC-1029797214.7z")
+    set(QTC_DEV_FILENAME "qtcreator-Windows-MSVC-1029797214_dev.7z")
     set(QTC_MD5 "55a3c8e6f3ad6c665e8219a4df1d702e")
     set(QTC_DEV_MD5 "fdaa3f29ea9929e4f923b264586da2ee")
 elseif(APPLE) # macOS
