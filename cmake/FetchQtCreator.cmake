@@ -44,8 +44,8 @@ if(NOT qtcreator_POPULATED)
   FetchContent_Populate(qtcreator)
 
   # Add dev files into the same directory
-  file(DOWNLOAD "${QTC_DEV_URL}" "${PROJECT_BUILD_DIR}/downloads/qtc_dev.7z" EXPECTED_MD5 ${QTC_DEV_MD5})
-  file(ARCHIVE_EXTRACT INPUT "${PROJECT_BUILD_DIR}/downloads/qtc_dev.7z" DESTINATION "${qtcreator_SOURCE_DIR}")
+  file(DOWNLOAD "${QTC_DEV_URL}" "${PROJECT_BINARY_DIR}/downloads/qtc_dev.7z" EXPECTED_MD5 ${QTC_DEV_MD5})
+  file(ARCHIVE_EXTRACT INPUT "${PROJECT_BINARY_DIR}/downloads/qtc_dev.7z" DESTINATION "${qtcreator_SOURCE_DIR}")
 
   # Let the CMake Find scripts find Qt Creator files
   list(APPEND CMAKE_PREFIX_PATH "${qtcreator_SOURCE_DIR}")
