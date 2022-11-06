@@ -48,5 +48,9 @@ if(NOT qtcreator_POPULATED)
   file(ARCHIVE_EXTRACT INPUT "${PROJECT_BINARY_DIR}/downloads/qtc_dev.7z" DESTINATION "${qtcreator_SOURCE_DIR}")
 
   # Let the CMake Find scripts find Qt Creator files
-  list(APPEND CMAKE_PREFIX_PATH "${qtcreator_SOURCE_DIR}")
+  if (APPLE)
+    list(APPEND CMAKE_APPBUNDLE_PATH "${qtcreator_SOURCE_DIR}")
+  else()
+    list(APPEND CMAKE_PREFIX_PATH "${qtcreator_SOURCE_DIR}")
+  endif()
 endif()
