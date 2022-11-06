@@ -50,7 +50,7 @@ if(NOT qtcreator_POPULATED)
   # Let the CMake Find scripts find Qt Creator files
   if (APPLE)
     list(APPEND CMAKE_APPBUNDLE_PATH "${qtcreator_SOURCE_DIR}")
-  else()
-    list(APPEND CMAKE_PREFIX_PATH "${qtcreator_SOURCE_DIR}")
   endif()
+
+  list(APPEND CMAKE_PREFIX_PATH "${qtcreator_SOURCE_DIR}")
 endif()
