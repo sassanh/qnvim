@@ -37,20 +37,21 @@ FetchContent_Declare(
   qtcreator
   URL "${QTC_URL}"
   URL_HASH MD5=${QTC_MD5}
+  DOWNLOAD_NO_EXTRACT TRUE
+  DOWNLOAD_NAME "qtc.7z"
 )
 
 FetchContent_GetProperties(qtcreator)
 if(NOT qtcreator_POPULATED)
   FetchContent_Populate(qtcreator)
 
+  # NOTE: We need to extract the content by hand to preserve the directory structure
+  file(ARCHIVE_EXTRACT INPUT "${qtcreator_SOURCE_DIR}/qtc.7z" DESTINATION "${qtcreator_BINARY_DIR}")
+
   # Add dev files into the same directory
-  file(DOWNLOAD "${QTC_DEV_URL}" "${PROJECT_BINARY_DIR}/downloads/qtc_dev.7z" EXPECTED_MD5 ${QTC_DEV_MD5})
-  file(ARCHIVE_EXTRACT INPUT "${PROJECT_BINARY_DIR}/downloads/qtc_dev.7z" DESTINATION "${qtcreator_SOURCE_DIR}")
+  file(DOWNLOAD "${QTC_DEV_URL}" "${qtcreator_SOURCE_DIR}/qtc_dev.7z" EXPECTED_MD5 ${QTC_DEV_MD5})
+  file(ARCHIVE_EXTRACT INPUT "${qtcreator_SOURCE_DIR}/qtc_dev.7z" DESTINATION "${qtcreator_BINARY_DIR}")
 
   # Let the CMake Find scripts find Qt Creator files
-  if (APPLE)
-    list(APPEND CMAKE_APPBUNDLE_PATH "${qtcreator_SOURCE_DIR}")
-  endif()
-
-  list(APPEND CMAKE_PREFIX_PATH "${qtcreator_SOURCE_DIR}")
+  list(APPEND CMAKE_PREFIX_PATH "${qtcreator_BINARY_DIR}")
 endif()
