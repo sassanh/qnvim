@@ -27,8 +27,7 @@ if (MSVC)
 endif()
 
 find_package(QtCreator REQUIRED COMPONENTS Core)
-find_package(QT NAMES Qt6 Qt5 COMPONENTS Widgets Network REQUIRED)
-set(QtX Qt${QT_VERSION_MAJOR})
+find_package(Qt5 COMPONENTS Widgets Network REQUIRED)
 
 add_qtc_plugin(QNVim
   PLUGIN_DEPENDS
@@ -36,7 +35,7 @@ add_qtc_plugin(QNVim
     QtCreator::TextEditor
     QtCreator::ProjectExplorer
   DEPENDS
-    ${QtX}::Widgets
+    Qt5::Widgets
     QtCreator::ExtensionSystem
     QtCreator::Utils
     neovim-qt
