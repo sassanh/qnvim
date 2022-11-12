@@ -52,11 +52,10 @@ if(NOT qtcreator_POPULATED)
   file(DOWNLOAD "${QTC_DEV_URL}" "${qtcreator_SOURCE_DIR}/qtc_dev.7z" EXPECTED_MD5 ${QTC_DEV_MD5})
   file(ARCHIVE_EXTRACT INPUT "${qtcreator_SOURCE_DIR}/qtc_dev.7z" DESTINATION "${qtcreator_BINARY_DIR}")
 
-  # Make the bundle name match the one, that will be used in find_package
+  # Make CMake's find_package find the QtCreator files where they are stored
   if (APPLE)
-      file(RENAME "${qtcreator_BINARY_DIR}/Qt Creator.app" "${qtcreator_BINARY_DIR}/QtCreator.app")
+    list(APPEND CMAKE_PREFIX_PATH "${qtcreator_BINARY_DIR}/Qt Creator.app/Contents/Resources")
   endif()
 
-  # Let the CMake Find scripts find Qt Creator files
   list(APPEND CMAKE_PREFIX_PATH "${qtcreator_BINARY_DIR}")
 endif()
