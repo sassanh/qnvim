@@ -59,3 +59,5 @@ if(NOT qtcreator_POPULATED)
 
   list(APPEND CMAKE_PREFIX_PATH "${qtcreator_BINARY_DIR}")
 endif()
+
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}" PARENT_SCOPE)

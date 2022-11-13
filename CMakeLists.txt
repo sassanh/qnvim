@@ -6,14 +6,9 @@ endif()
 
 project(QNVim)
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-
 option(FETCH_QTC "Download Qt Creator development files automatically" ON)
 
-if (FETCH_QTC)
-  include(FetchQtCreator)
-endif()
-include(FetchNeovimQt)
+add_subdirectory(external)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
