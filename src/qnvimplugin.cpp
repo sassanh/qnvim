@@ -869,7 +869,7 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                 if (bufferListed and mEditors.contains(buffer) and mEditors[buffer]) {
                     if (Core::EditorManager::currentEditor() == mEditors[buffer])
                         mSettingBufferFromVim = -1;
-                    Core::EditorManager::closeEditor(mEditors[buffer]);
+                    Core::EditorManager::closeEditors({mEditors[buffer]});
                 }
             } else if (cmd == "BufHidden") {
                 if (
@@ -878,13 +878,13 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                 ) {
                     if (Core::EditorManager::currentEditor() == mEditors[buffer])
                         mSettingBufferFromVim = -1;
-                    Core::EditorManager::closeEditor(mEditors[buffer]);
+                    Core::EditorManager::closeEditors({mEditors[buffer]});
                 }
             } else if (cmd == "BufWipeout") {
                 if (!bufferListed and mEditors.contains(buffer) and mEditors[buffer]) {
                     if (Core::EditorManager::currentEditor() == mEditors[buffer])
                         mSettingBufferFromVim = -1;
-                    Core::EditorManager::closeEditor(mEditors[buffer]);
+                    Core::EditorManager::closeEditors({mEditors[buffer]});
                 }
             }
         }

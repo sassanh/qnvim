@@ -39,3 +39,5 @@ qnvim.pro.user*
 CMakeLists.txt.user*
 
 tags
+
+build*/
