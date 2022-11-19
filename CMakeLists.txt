@@ -24,22 +24,4 @@ endif()
 find_package(QtCreator REQUIRED COMPONENTS Core)
 find_package(Qt5 COMPONENTS Widgets Network REQUIRED)
 
-add_qtc_plugin(QNVim
-  PLUGIN_DEPENDS
-    QtCreator::Core
-    QtCreator::TextEditor
-    QtCreator::ProjectExplorer
-  DEPENDS
-    Qt5::Widgets
-    QtCreator::ExtensionSystem
-    QtCreator::Utils
-    neovim-qt
-    neovim-qt-gui
-  SOURCES
-    src/qnvimplugin.cpp
-    src/numbers_column.cpp
-    src/qnvimplugin.h
-    src/numbers_column.h
-    src/qnvim_global.h
-    src/qnvimconstants.h
-)
+add_subdirectory(src)
