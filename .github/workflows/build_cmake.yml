@@ -1,0 +1,128 @@
+name: Build plugin
+
+on: [push]
+
+env:
+  PLUGIN_NAME: QNVim
+  QT_VERSION: 5.15.2
+  QT_CREATOR_VERSION: 4.15.2
+  QT_CREATOR_SNAPSHOT: NO
+  CMAKE_VERSION: 3.22.4
+  NINJA_VERSION: 1.10.1
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      matrix:
+        config:
+        - {
+            name: "Windows MSVC 2022", artifact: "Windows-x64",
+            os: windows-2022,
+            cc: "cl", cxx: "cl",
+          }
+        - {
+            name: "Ubuntu GCC 11", artifact: "Linux-x64",
+            os: ubuntu-22.04,
+            cc: "gcc", cxx: "g++"
+          }
+        - {
+            name: "macOS Clang 14", artifact: "macOS-x64",
+            os: macos-12,
+            cc: "clang", cxx: "clang++"
+          }
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Download Ninja and CMake
+      run: cmake -P tools/ci/DownloadNinjaAndCMake.cmake
+
+    - name: Install system libs
+      run: cmake -P tools/ci/InstallSystemLibs.cmake
+
+    - name: Download Qt
+      id: qt
+      run: cmake -P tools/ci/DownloadQt.cmake
+
+    - name: Download Qt Creator
+      id: qt_creator
+      run: cmake -P tools/ci/DownloadQtCreator.cmake
+
+    - name: Download Neovim
+      uses: rhysd/action-setup-vim@v1
+      with:
+        neovim: true
+        version: stable
+
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+      if: ${{ matrix.config.cc == 'cl' }}
+
+    - name: Build
+      run: cmake -P tools/ci/Build.cmake
+      env:
+        ARTIFACT_SUFFIX: ${{ matrix.config.artifact }}
+        CC: ${{ matrix.config.cc }}
+        CXX: ${{ matrix.config.cxx }}
+        MACOSX_DEPLOYMENT_TARGET: "10.13"
+        QTC_DIR: ${{ steps.qt_creator.outputs.qtc_dir }}
+        QT_DIR: ${{ steps.qt.outputs.qt_dir }}
+
+    - uses: actions/upload-artifact@v3
+      id: upload_artifact
+      with:
+        path: ./${{ env.PLUGIN_NAME }}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}.7z
+        name: ${{ env.PLUGIN_NAME}}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}.7z
+
+  release:
+    if: contains(github.ref, 'tags/v')
+    runs-on: ubuntu-20.04
+    needs: build
+
+    steps:
+    - name: Create Release
+      id: create_release
+      run: |
+        gh release -R ${{ github.repository }} create ${{ github.ref_name }} -t "${{ env.NAME }}"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        NAME: Release ${{ github.ref_name }}
+
+  publish:
+    if: contains(github.ref, 'tags/v')
+
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      matrix:
+        config:
+        - {
+            name: "Windows Latest x64", artifact: "Windows-x64.7z",
+            os: ubuntu-22.04
+          }
+        - {
+            name: "Linux Latest x64", artifact: "Linux-x64.7z",
+            os: ubuntu-22.04
+          }
+        - {
+            name: "macOS Latest x64", artifact: "macOS-x64.7z",
+            os: macos-12
+          }
+    needs: release
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ env.PLUGIN_NAME }}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}
+        path: ./
+
+    - name: Upload to Release
+      id: upload_to_release
+      run: |
+        gh release -R ${{ github.repository }} upload ${{ github.ref_name }} ${{ env.ASSET_PATH }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ASSET_PATH: ./${{ env.PLUGIN_NAME }}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}

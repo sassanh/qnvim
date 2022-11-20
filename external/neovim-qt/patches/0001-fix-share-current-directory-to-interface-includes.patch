@@ -1,0 +1,24 @@
+From 17c3b68c664baa2eb5bfdc976bba8692f185b191 Mon Sep 17 00:00:00 2001
+From: Mikhail Zolotukhin <mail@gikari.com>
+Date: Thu, 17 Nov 2022 21:08:39 +0100
+Subject: [PATCH] fix: share current directory to interface includes
+
+---
+ CMakeLists.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index dab2afe..780afa4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -121,6 +121,7 @@ endif()
+ 
+ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+ set(CMAKE_INCLUDE_CURRENT_DIR ON)
++set(CMAKE_INCLUDE_CURRENT_DIR_IN_INTERFACE ON)
+ 
+ # to generate a compile_commands.json usable by ycm and other tooling
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+-- 
+2.38.1.windows.1
+
