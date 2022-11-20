@@ -1,14 +1,13 @@
 set(qt_version "$ENV{QT_VERSION}")
-set(runner_os "$ENV{RUNNER_OS}")
 
 string(REGEX MATCH "^[0-9]+" qt_version_major "${qt_version}")
 string(REPLACE "." "" qt_version_dotless "${qt_version}")
-if ("${runner_os}" STREQUAL "Windows")
+if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows")
   set(url_os "windows_x86")
   set(qt_package_arch_suffix "win64_msvc2019_64")
   set(qt_dir_prefix "${qt_version}/msvc2019_64")
   set(qt_package_suffix "-Windows-Windows_10-MSVC2019-Windows-Windows_10-X86_64")
-elseif ("${runner_os}" STREQUAL "Linux")
+elseif ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
   set(url_os "linux_x64")
   set(qt_package_arch_suffix "gcc_64")
   set(qt_dir_prefix "${qt_version}/gcc_64")
@@ -17,7 +16,7 @@ elseif ("${runner_os}" STREQUAL "Linux")
   else()
     set(qt_package_suffix "-Linux-RHEL_8_2-GCC-Linux-RHEL_8_2-X86_64")
   endif()
-elseif ("${runner_os}" STREQUAL "macOS")
+elseif ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Darwin")
   set(url_os "mac_x64")
   set(qt_package_arch_suffix "clang_64")
   if("${qt_version_major}" STREQUAL "5")
@@ -66,7 +65,7 @@ if("${qt_version_major}" STREQUAL "6")
 endif()
 
 # uic depends on libicu56.so
-if ("${runner_os}" STREQUAL "Linux")
+if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
   downloadAndExtract(
     "${qt_base_url}/qt.qt${qt_version_major}.${qt_version_dotless}.${qt_package_arch_suffix}/${qt_package_version}icu-linux-Rhel7.2-x64.7z"
     icu.7z

@@ -1,6 +1,4 @@
-set(runner_os "$ENV{RUNNER_OS}")
-
-if ("${runner_os}" STREQUAL "Linux")
+if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
   execute_process(
     COMMAND sudo apt update
   )

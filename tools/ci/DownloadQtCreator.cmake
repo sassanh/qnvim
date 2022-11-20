@@ -1,5 +1,3 @@
-set(runner_os "$ENV{RUNNER_OS}")
-
 string(REGEX MATCH "([0-9]+.[0-9]+).[0-9]+" outvar "$ENV{QT_CREATOR_VERSION}")
 
 set(qtc_base_url "https://download.qt.io/official_releases/qtcreator/${CMAKE_MATCH_1}/$ENV{QT_CREATOR_VERSION}/installer_source")
@@ -8,11 +6,11 @@ if (qtc_snapshot)
   set(qtc_base_url "https://download.qt.io/snapshots/qtcreator/${CMAKE_MATCH_1}/$ENV{QT_CREATOR_VERSION}/installer_source/${qtc_snapshot}")
 endif()
 
-if ("${runner_os}" STREQUAL "Windows")
+if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows")
   set(qtc_platform "windows_x64")
-elseif ("${runner_os}" STREQUAL "Linux")
+elseif ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
   set(qtc_platform "linux_x64")
-elseif ("${runner_os}" STREQUAL "macOS")
+elseif ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Darwin")
   set(qtc_platform "mac_x64")
 endif()
 
