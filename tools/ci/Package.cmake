@@ -1,6 +1,8 @@
+set(QTC_DIR "${CMAKE_CURRENT_LIST_DIR}/../../external/qtcreator/dist-${CMAKE_HOST_SYSTEM_NAME}")
+
 set(build_plugin_py "scripts/build_plugin.py")
 foreach(dir "share/qtcreator/scripts" "Qt Creator.app/Contents/Resources/scripts" "Contents/Resources/scripts")
-  if(EXISTS "$ENV{QTC_DIR}/${dir}/build_plugin.py")
+  if(EXISTS "${QTC_DIR}/${dir}/build_plugin.py")
     set(build_plugin_py "${dir}/build_plugin.py")
     break()
   endif()
@@ -9,14 +11,13 @@ endforeach()
 execute_process(
   COMMAND python
     -u
-    "$ENV{QTC_DIR}/${build_plugin_py}"
+    "${QTC_DIR}/${build_plugin_py}"
     --name "$ENV{PLUGIN_NAME}-$ENV{QT_CREATOR_VERSION}-$ENV{ARTIFACT_SUFFIX}"
     --src .
     --build build
     --qt-path "$ENV{QT_DIR}"
-    --qtc-path "$ENV{QTC_DIR}"
+    --qtc-path "${QTC_DIR}"
     --output-path "$ENV{GITHUB_WORKSPACE}"
-    --add-config=-DFETCH_QTC=OFF
   RESULT_VARIABLE result
 )
 if (NOT result EQUAL 0)
