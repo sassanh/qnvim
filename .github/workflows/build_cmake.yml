@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
+# SPDX-License-Identifier: MIT
+
 name: Build plugin
 
 on: [ push, pull_request ]

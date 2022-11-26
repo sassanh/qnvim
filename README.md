@@ -1,3 +1,6 @@
+<!--SPDX-FileCopyrightText: none-->
+<!--SPDX-License-Identifier: CC0-1.0-->
+
 # qnvim
 
 A Qt Creator plugin that helps those who are used to editing text in Neovim/Vim

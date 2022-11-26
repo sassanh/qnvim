@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
+# SPDX-License-Identifier: MIT
+
 set(cmake_version "$ENV{CMAKE_VERSION}")
 set(ninja_version "$ENV{NINJA_VERSION}")
 

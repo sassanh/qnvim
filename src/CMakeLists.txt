@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
+# SPDX-License-Identifier: MIT
+
 add_qtc_plugin(QNVim
   PLUGIN_DEPENDS
     QtCreator::Core

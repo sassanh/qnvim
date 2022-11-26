@@ -1,3 +1,6 @@
+" SPDX-FileCopyrightText: 2018-2019 Sassan Haradji <sassanh@gmail.com>
+" SPDX-License-Identifier: CC0-1.0
+
 nnoremap <d-b> :Build<cr>
 nnoremap <d-d> :Deploy<cr>
 nnoremap <d-r> :Run<cr>
