@@ -1,5 +1,7 @@
-set(QT_CREATOR_VERSION "4.15.2")
-set(QT_CREATOR_SNAPSHOT "")
+set(QTC_EXT_DIR "${CMAKE_CURRENT_LIST_DIR}/../external/qtcreator")
+
+# Fetch Qt Creator Version
+include("${QTC_EXT_DIR}/version.cmake")
 
 # Notify CI about Qt Creator version
 file(APPEND $ENV{GITHUB_OUTPUT} "qtc_ver=${QT_CREATOR_VERSION}")
@@ -22,7 +24,8 @@ elseif ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Darwin")
   set(qtc_platform "mac_x64")
 endif()
 
-set(QTC_DIST_DIR "${CMAKE_CURRENT_LIST_DIR}/../external/qtcreator/dist-${CMAKE_HOST_SYSTEM_NAME}")
+set(QTC_DIST_DIR "${QTC_EXT_DIR}/dist-${CMAKE_HOST_SYSTEM_NAME}-${QT_CREATOR_VERSION}")
+
 file(MAKE_DIRECTORY "${QTC_DIST_DIR}")
 
 message(STATUS "Downloading Qt Creator from ${qtc_base_url}/${qtc_platform}...")

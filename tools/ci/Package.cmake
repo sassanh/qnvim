@@ -1,4 +1,5 @@
-set(QTC_DIR "${CMAKE_CURRENT_LIST_DIR}/../../external/qtcreator/dist-${CMAKE_HOST_SYSTEM_NAME}")
+set(QTC_EXT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../external/qtcreator")
+set(QTC_DIR "${QTC_EXT_DIR}/dist-${CMAKE_HOST_SYSTEM_NAME}-$ENV{QT_CREATOR_VERSION}")
 
 set(build_plugin_py "scripts/build_plugin.py")
 foreach(dir "share/qtcreator/scripts" "Qt Creator.app/Contents/Resources/scripts" "Contents/Resources/scripts")
