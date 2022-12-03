@@ -1,12 +1,10 @@
 name: Build plugin
 
-on: [push]
+on: [ push, pull_request ]
 
 env:
   PLUGIN_NAME: QNVim
   QT_VERSION: 5.15.2
-  QT_CREATOR_VERSION: 4.15.2
-  QT_CREATOR_SNAPSHOT: NO
   CMAKE_VERSION: 3.22.4
   NINJA_VERSION: 1.10.1
 
@@ -46,9 +44,11 @@ jobs:
       id: qt
       run: cmake -P tools/ci/DownloadQt.cmake
 
+    # To create a package, we need a script, that comes with Qt Creator
+    # This is why we fetch it first, before invoking CMake
     - name: Download Qt Creator
       id: qt_creator
-      run: cmake -P tools/ci/DownloadQtCreator.cmake
+      run: cmake -P tools/DownloadQtCreator.cmake
 
     - name: Download Neovim
       uses: rhysd/action-setup-vim@v1
@@ -60,21 +60,23 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
       if: ${{ matrix.config.cc == 'cl' }}
 
-    - name: Build
-      run: cmake -P tools/ci/Build.cmake
+    - name: Build and Package
+      run: cmake -P tools/ci/Package.cmake
       env:
         ARTIFACT_SUFFIX: ${{ matrix.config.artifact }}
         CC: ${{ matrix.config.cc }}
         CXX: ${{ matrix.config.cxx }}
         MACOSX_DEPLOYMENT_TARGET: "10.13"
-        QTC_DIR: ${{ steps.qt_creator.outputs.qtc_dir }}
         QT_DIR: ${{ steps.qt.outputs.qt_dir }}
+        QT_CREATOR_VERSION: ${{ steps.qt_creator.outputs.qtc_ver }}
 
     - uses: actions/upload-artifact@v3
       id: upload_artifact
       with:
-        path: ./${{ env.PLUGIN_NAME }}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}.7z
-        name: ${{ env.PLUGIN_NAME}}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}.7z
+        path: ./${{ env.PLUGIN_NAME }}-${{ steps.qt_creator.outputs.qtc_ver }}-${{ matrix.config.artifact }}.7z
+        name: ${{ env.PLUGIN_NAME}}-${{ steps.qt_creator.outputs.qtc_ver }}-${{ matrix.config.artifact }}.7z
+    outputs:
+      qtc_ver: ${{ steps.qt_creator.outputs.qtc_ver }}
 
   release:
     if: contains(github.ref, 'tags/v')
@@ -89,6 +91,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         NAME: Release ${{ github.ref_name }}
+    outputs:
+      qtc_ver: ${{ needs.build.outputs.qtc_ver }}
 
   publish:
     if: contains(github.ref, 'tags/v')
@@ -116,7 +120,7 @@ jobs:
     - name: Download artifact
       uses: actions/download-artifact@v3
       with:
-        name: ${{ env.PLUGIN_NAME }}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}
+        name: ${{ env.PLUGIN_NAME }}-${{ needs.release.outputs.qtc_ver }}-${{ matrix.config.artifact }}
         path: ./
 
     - name: Upload to Release
@@ -125,4 +129,4 @@ jobs:
         gh release -R ${{ github.repository }} upload ${{ github.ref_name }} ${{ env.ASSET_PATH }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        ASSET_PATH: ./${{ env.PLUGIN_NAME }}-${{ env.QT_CREATOR_VERSION }}-${{ matrix.config.artifact }}
+        ASSET_PATH: ./${{ env.PLUGIN_NAME }}-${{ needs.release.outputs.qtc_ver }}-${{ matrix.config.artifact }}

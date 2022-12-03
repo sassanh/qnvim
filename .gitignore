@@ -41,3 +41,7 @@ CMakeLists.txt.user*
 tags
 
 build*/
+compile_commands.json
+
+# Downloaded QtCreator path
+external/qtcreator/dist*/
