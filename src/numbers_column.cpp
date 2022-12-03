@@ -83,11 +83,10 @@ void NumbersColumn::paintEvent(QPaintEvent *event) {
 
     QPainter p(this);
     QPalette pal = mEditor->extraArea()->palette();
-    const QColor fg = pal.color(QPalette::Dark);
-    const QColor bg = pal.color(QPalette::Background);
+    const QColor fg = pal.color(QPalette::WindowText);
+    const QColor bg = pal.color(QPalette::Window);
     p.setPen(fg);
 
-    QFontMetricsF fm(mEditor->textDocument()->fontSettings().font());
     qreal lineHeight = block.layout()->boundingRect().height();
     QRectF rect(0, mEditor->cursorRect(firstVisibleCursor).y(), width(), lineHeight);
     bool hideLineNumbers = mEditor->lineNumbersVisible();
