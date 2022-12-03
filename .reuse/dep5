@@ -1,0 +1,22 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: QNVim
+Upstream-Contact: Sassan Haradji <sassanh@gmail.com>
+Source: https://github.com/sassanh/qnvim
+
+# Sample paragraph, commented out:
+#
+# Files: src/*
+# Copyright: $YEAR $NAME <$CONTACT>
+# License: ...
+
+Files: external/neovim-qt/patches/0001-fix-share-current-directory-to-interface-includes.patch
+Copyright: 2022 Mikhail Zolotukhin
+License: ISC
+
+Files: external/neovim-qt/patches/0002-fix-use-current-project-directory-for-icons-install.patch
+Copyright: 2022 Mikhail Zolotukhin
+License: ISC
+
+Files: src/QNVim.json.in
+Copyright: none
+License: CC0-1.0

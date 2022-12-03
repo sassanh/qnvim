@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
+# SPDX-License-Identifier: MIT
+
 set(qt_version "$ENV{QT_VERSION}")
 
 string(REGEX MATCH "^[0-9]+" qt_version_major "${qt_version}")

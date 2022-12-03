@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
+# SPDX-License-Identifier: MIT
+
 set(QTC_EXT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../external/qtcreator")
 set(QTC_DIR "${QTC_EXT_DIR}/dist-${CMAKE_HOST_SYSTEM_NAME}-$ENV{QT_CREATOR_VERSION}")
 
