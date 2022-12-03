@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "qnvimplugin.h"
+#include "log.h"
 #include "numbers_column.h"
 #include "qnvimconstants.h"
 
@@ -332,7 +333,7 @@ void QNVimPlugin::syncFromVim() {
 
         mChangedTicks[bufferNumber] = changedtick;
 
-        qWarning() << "QNVimPlugin::syncFromVim";
+        qDebug(Main) << "QNVimPlugin::syncFromVim";
 
         auto request = mNVim->api2()->nvim_buf_get_lines(bufferNumber, 0, -1, true);
         connect(request, &NeovimQt::MsgpackRequest::finished, this, [=](quint32, quint64, const QVariant &lines) {
@@ -487,7 +488,7 @@ bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
 }
 
 void QNVimPlugin::toggleQNVim() {
-    qWarning() << "QNVimPlugin::toggleQNVim";
+    qDebug(Main) << "QNVimPlugin::toggleQNVim";
     mEnabled = !mEnabled;
 
     if (mEnabled) {
@@ -534,7 +535,7 @@ void QNVimPlugin::toggleQNVim() {
 }
 
 void QNVimPlugin::initialize(bool reopen) {
-    qWarning() << "QNVimPlugin::initialize";
+    qDebug(Main) << "QNVimPlugin::initialize";
     mCMDLine = new QPlainTextEdit;
     Core::StatusBarManager::addStatusBarWidget(mCMDLine, Core::StatusBarManager::First);
     mCMDLine->document()->setDocumentMargin(0);
@@ -615,10 +616,10 @@ autocmd VimEnter * let $MYQVIMRC=substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 
         request->setTimeout(2000);
         connect(request, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
         connect(request, &NeovimQt::MsgpackRequest::timeout, [=]() {
-            qWarning() << "Neovim: Connection timed out!";
+            qCritical(Main) << "Neovim: Connection timed out!";
         });
         connect(request, &NeovimQt::MsgpackRequest::finished, this, [=]() {
-            qWarning() << "Neovim: attached!";
+            qInfo(Main) << "Neovim: attached!";
             if (reopen)
                 QNVimPlugin::editorOpened(Core::EditorManager::currentEditor());
         });
@@ -637,7 +638,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
 
     QString filename(this->filename(editor));
     mText.clear();
-    qWarning() << "Opened " << filename << mSettingBufferFromVim;
+    qDebug(Main) << "Opened " << filename << mSettingBufferFromVim;
 
     QWidget *widget = editor->widget();
     if (!widget)
@@ -645,7 +646,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
 
     auto project = ProjectExplorer::SessionManager::projectForFile(
         Utils::FilePath::fromString(filename));
-    qWarning() << project;
+    qDebug(Main) << project;
     if (project) {
         QString projectDirectory = project->projectDirectory().toString();
         if (!projectDirectory.isEmpty())
@@ -730,7 +731,7 @@ void QNVimPlugin::editorOpened(Core::IEditor *editor) {
 }
 
 void QNVimPlugin::editorAboutToClose(Core::IEditor *editor) {
-    qWarning() << "QNVimPlugin::editorAboutToClose";
+    qDebug(Main) << "QNVimPlugin::editorAboutToClose";
     if (!mBuffers.contains(editor))
         return;
 
@@ -846,7 +847,7 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                                 e = Core::EditorManager::openEditor(filename);
                             }
                         } else {
-                            qWarning() << 123;
+                            qDebug(Main) << 123;
                             if (bufferType == "terminal") {
                                 e = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);
                             } else if (bufferType == "help") {
@@ -910,13 +911,13 @@ void QNVimPlugin::redraw(const QVariantList &args) {
             flush = true;
 
         if (command == "win_pos") {
-            qWarning() << line;
+            qDebug(Main) << line;
         } else if (command == "win_float_pos") {
-            qWarning() << line;
+            qDebug(Main) << line;
         } else if (command == "win_hide") {
-            qWarning() << line;
+            qDebug(Main) << line;
         } else if (command == "win_close") {
-            qWarning() << line;
+            qDebug(Main) << line;
         } else if (command == "bell") {
             QApplication::beep();
         } else if (command == "mode_change") {

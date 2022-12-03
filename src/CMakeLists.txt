@@ -13,10 +13,12 @@ add_qtc_plugin(QNVim
     neovim-qt
     neovim-qt-gui
   SOURCES
-    qnvimplugin.cpp
+    log.cpp
+    log.h
     numbers_column.cpp
-    qnvimplugin.h
     numbers_column.h
     qnvim_global.h
     qnvimconstants.h
+    qnvimplugin.cpp
+    qnvimplugin.h
 )
