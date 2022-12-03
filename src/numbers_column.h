@@ -47,26 +47,25 @@
 #include <QWidget>
 
 namespace TextEditor {
-    class TextEditorWidget;
+class TextEditorWidget;
 }
 
 namespace QNVim {
 namespace Internal {
 
-class NumbersColumn : public QWidget
-{
+class NumbersColumn : public QWidget {
     Q_OBJECT
     bool mNumber = false;
     TextEditor::TextEditorWidget *mEditor = nullptr;
 
-public:
+  public:
     NumbersColumn();
 
     void setEditor(TextEditor::TextEditorWidget *);
     void setNumber(bool);
     void updateGeometry();
 
-protected:
+  protected:
     void paintEvent(QPaintEvent *event);
     bool eventFilter(QObject *, QEvent *);
 };

@@ -44,8 +44,8 @@
 
 #pragma once
 
-#include "qnvim_global.h"
 #include "numbers_column.h"
+#include "qnvim_global.h"
 
 #include <extensionsystem/iplugin.h>
 #include <texteditor/plaintexteditorfactory.h>
@@ -59,15 +59,15 @@ class QPlainTextEdit;
 QT_END_NAMESPACE
 
 namespace Core {
-    class IEditor;
+class IEditor;
 }
 
 namespace ProjectExplorer {
-    class Project;
+class Project;
 }
 
 namespace NeovimQt {
-    class NeovimConnector;
+class NeovimConnector;
 }
 
 namespace QNVim {
@@ -79,7 +79,7 @@ class QNVimPlugin : public ExtensionSystem::IPlugin {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "QNVim.json")
 
-public:
+  public:
     QNVimPlugin();
     ~QNVimPlugin();
 
@@ -90,7 +90,7 @@ public:
     bool eventFilter(QObject *, QEvent *);
     void toggleQNVim();
 
-protected:
+  protected:
     QString filename(Core::IEditor * = nullptr) const;
 
     void fixSize(Core::IEditor * = nullptr);
@@ -103,11 +103,11 @@ protected:
 
     void triggerCommand(const QByteArray &);
 
-private slots:
+  private slots:
     // Save cursor flash time to variable instead of changing real value
     void saveCursorFlashTime(int cursorFlashTime);
 
-private:
+  private:
     void initialize(bool reopen);
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
@@ -164,14 +164,14 @@ private:
 class HelpEditorFactory : public TextEditor::PlainTextEditorFactory {
     Q_OBJECT
 
-public:
+  public:
     explicit HelpEditorFactory();
 };
 
 class TerminalEditorFactory : public TextEditor::PlainTextEditorFactory {
     Q_OBJECT
 
-public:
+  public:
     explicit TerminalEditorFactory();
 };
 
