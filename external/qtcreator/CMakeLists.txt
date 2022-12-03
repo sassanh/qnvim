@@ -5,6 +5,7 @@ set(QTC_DIST_PATH
 if (NOT EXISTS "${QTC_DIST_PATH}")
     execute_process(COMMAND
         ${CMAKE_COMMAND} -P "${PROJECT_SOURCE_DIR}/tools/DownloadQtCreator.cmake"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
 endif()
 
