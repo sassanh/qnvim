@@ -807,7 +807,7 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
             } else if (cmd == "BufWriteCmd") {
                 if (mEditors.contains(buffer)) {
                     QString currentFilename = this->filename(mEditors[buffer]);
-                    if (mEditors[buffer]->document()->save(nullptr, filename)) {
+                    if (mEditors[buffer]->document()->save(nullptr, Utils::FilePath::fromString(filename))) {
                         if (currentFilename != filename) {
                             mEditors.remove(buffer);
                             mChangedTicks.remove(buffer);
