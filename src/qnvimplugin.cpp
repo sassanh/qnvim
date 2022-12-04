@@ -86,7 +86,7 @@ void QNVimPlugin::fixSize(Core::IEditor *editor) {
 
     // -1 is for the visual whitespaces that Qt Creator adds (whether it renders them or not)
     // TODO: after ext_columns is implemented in neovim +6 should be removed
-    const int width = qFloor(textEditor->viewport()->width() / fm.width('A')) - 1 + 6;
+    const int width = qFloor(textEditor->viewport()->width() / fm.horizontalAdvance('A')) - 1 + 6;
     const int height = qFloor(textEditor->height() / fm.lineSpacing());
 
     if (width != mWidth or height != mHeight)
@@ -108,7 +108,7 @@ void QNVimPlugin::syncCursorToVim(Core::IEditor *editor) {
 
     const auto text = textEditor->toPlainText();
     int cursorPosition = textEditor->textCursor().position();
-    int line = text.leftRef(cursorPosition).count('\n') + 1;
+    int line = QStringView(text).left(cursorPosition).count('\n') + 1;
     int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
 
     if (line == mCursor.y() and col == mCursor.x()) {
@@ -139,9 +139,9 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
 
     QString visualCommand;
     if (textEditor->hasBlockSelection()) {
-        line = text.leftRef(cursorPosition).count('\n') + 1;
+        line = QStringView(text).left(cursorPosition).count('\n') + 1;
         col = text.left(cursorPosition).section('\n', -1).length() + 1;
-        vLine = text.leftRef(anchorPosition).count('\n') + 1;
+        vLine = QStringView(text).left(anchorPosition).count('\n') + 1;
         vCol = text.left(anchorPosition).section('\n', -1).length() + 1;
 
         if (vCol < col)
@@ -158,9 +158,9 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
         else
             --anchorPosition;
 
-        line = text.leftRef(cursorPosition).count('\n') + 1;
+        line = QStringView(text).left(cursorPosition).count('\n') + 1;
         col = text.left(cursorPosition).section('\n', -1).length() + 1;
-        vLine = text.leftRef(anchorPosition).count('\n') + 1;
+        vLine = QStringView(text).left(anchorPosition).count('\n') + 1;
         vCol = text.left(anchorPosition).section('\n', -1).length() + 1;
         visualCommand = "v";
     }
@@ -191,7 +191,7 @@ void QNVimPlugin::syncToVim(Core::IEditor *editor, std::function<void()> callbac
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
     int cursorPosition = textEditor->textCursor().position();
-    int line = text.leftRef(cursorPosition).count('\n') + 1;
+    int line = QStringView(text).left(cursorPosition).count('\n') + 1;
     int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
 
     if (mText != text) {
