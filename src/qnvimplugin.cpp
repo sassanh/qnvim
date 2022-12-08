@@ -362,7 +362,6 @@ void QNVimPlugin::syncFromVim() {
                 for (const auto &d : diff) {
                     switch (d.command) {
                     case Utils::Diff::Insert: {
-                        qWarning() << 3 << d.text << d.text.size() << d.text.length();
                         // Adjust cursor position if we do work in front of the cursor.
                         if (charactersInfrontOfCursor > 0) {
                             const int size = d.text.size();
@@ -375,7 +374,6 @@ void QNVimPlugin::syncFromVim() {
 
                     case Utils::Diff::Delete: {
                         // Adjust cursor position if we do work in front of the cursor.
-                        qWarning() << 2 << d.text << d.text.size() << d.text.length();
                         if (charactersInfrontOfCursor > 0) {
                             const int size = d.text.size();
                             charactersInfrontOfCursor -= size;
@@ -391,7 +389,6 @@ void QNVimPlugin::syncFromVim() {
 
                     case Utils::Diff::Equal:
                         // Adjust cursor position
-                        qWarning() << 1 << d.text << d.text.size() << d.text.length();
                         charactersInfrontOfCursor -= d.text.size();
                         cursor.setPosition(cursor.position() + d.text.length(), QTextCursor::MoveAnchor);
                         break;
