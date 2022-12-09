@@ -99,17 +99,9 @@ can create new keyboard shortcuts using Qt Creator commands.
 
 ## Credits
 
-- [Neovim](https://neovim.io): The lovely text editor that solves the problem
-  of writing AND editing text once for ever.
-- [Qt](https://www.qt.io): The lovely cross platform framework that lets you
-  build awesome software with its full stack of tools from networking to UI
-  controls to 2d/3d graphics and many others.
-- [Qt Creator](https://www.qt.io/product): The lovely IDE that lets you use the
-  full power of Qt in an user friendly environment (I remember days that Qt
-  Creator didn't exist and to code with Qt you had to use Eclipse or bare
-  terminal and it was like a nightmare, Qt Creator eased the programming with
-  Qt a lot.)
+- [Neovim](https://neovim.io)
+- [Qt](https://www.qt.io)
+- [Qt Creator](https://www.qt.io/product)
 - [Neovim Qt](https://github.com/equalsraf/neovim-qt)
 
-And lots of other libraries that are used in above projects and are mentioned
-in their docs.
+And the libraries used in above projects and are mentioned in their docs.
