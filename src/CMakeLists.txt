@@ -7,7 +7,7 @@ add_qtc_plugin(QNVim
     QtCreator::TextEditor
     QtCreator::ProjectExplorer
   DEPENDS
-    Qt5::Widgets
+    Qt::Widgets
     QtCreator::ExtensionSystem
     QtCreator::Utils
     neovim-qt
