@@ -13,6 +13,8 @@ FetchContent_GetProperties(neovimqt)
 if(NOT neovimqt_POPULATED)
   FetchContent_Populate(neovimqt)
 
+  message(STATUS "PATH: ${CMAKE_PREFIX_PATH}")
+
   # We use this, instead of MakeAvailable,
   # so that neovimqt is not installed in CI artifacts
   add_subdirectory(${neovimqt_SOURCE_DIR} ${neovimqt_BINARY_DIR} EXCLUDE_FROM_ALL)
