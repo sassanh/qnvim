@@ -14,16 +14,21 @@
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/statusbarmanager.h>
+
 #include <gui/input.h>
 #include <msgpackrequest.h>
 #include <neovimconnector.h>
+
 #include <projectexplorer/project.h>
 #include <projectexplorer/session.h>
+
 #include <texteditor/displaysettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
 #include <texteditor/texteditorsettings.h>
+#include <texteditor/tabsettings.h>
+
 #include <utils/differ.h>
 #include <utils/fancylineedit.h>
 #include <utils/fileutils.h>
@@ -129,20 +134,23 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     QString text = textEditor->toPlainText();
-    auto cursor = textEditor->hasBlockSelection() ? textEditor->blockSelection() : textEditor->textCursor();
-    int cursorPosition = cursor.position();
-    int anchorPosition = cursor.anchor();
+
+    auto multiTextCursor = textEditor->multiTextCursor();
+    auto firstCursor = !multiTextCursor.isNull() ? multiTextCursor.cursors().front() : textEditor->textCursor();
+    auto lastCursor = !multiTextCursor.isNull() ? multiTextCursor.cursors().back() : textEditor->textCursor();
+    int selectionBegin = firstCursor.anchor();
+    int selectionEnd = lastCursor.position();
     int line, col, vLine, vCol;
 
-    if (anchorPosition == cursorPosition)
+    if (selectionEnd == selectionBegin)
         return;
 
     QString visualCommand;
-    if (textEditor->hasBlockSelection()) {
-        line = QStringView(text).left(cursorPosition).count('\n') + 1;
-        col = text.left(cursorPosition).section('\n', -1).length() + 1;
-        vLine = QStringView(text).left(anchorPosition).count('\n') + 1;
-        vCol = text.left(anchorPosition).section('\n', -1).length() + 1;
+    if (multiTextCursor.hasMultipleCursors()) {
+        line = QStringView(text).left(selectionBegin).count('\n') + 1;
+        col = text.left(selectionBegin).section('\n', -1).length() + 1;
+        vLine = QStringView(text).left(selectionEnd).count('\n') + 1;
+        vCol = text.left(selectionEnd).section('\n', -1).length() + 1;
 
         if (vCol < col)
             --col;
@@ -153,15 +161,15 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
     } else if (mMode == "V") {
         return;
     } else {
-        if (anchorPosition < cursorPosition)
-            --cursorPosition;
+        if (selectionEnd < selectionBegin)
+            --selectionBegin;
         else
-            --anchorPosition;
+            --selectionEnd;
 
-        line = QStringView(text).left(cursorPosition).count('\n') + 1;
-        col = text.left(cursorPosition).section('\n', -1).length() + 1;
-        vLine = QStringView(text).left(anchorPosition).count('\n') + 1;
-        vCol = text.left(anchorPosition).section('\n', -1).length() + 1;
+        line = QStringView(text).left(selectionBegin).count('\n') + 1;
+        col = text.left(selectionBegin).section('\n', -1).length() + 1;
+        vLine = QStringView(text).left(selectionEnd).count('\n') + 1;
+        vCol = text.left(selectionEnd).section('\n', -1).length() + 1;
         visualCommand = "v";
     }
 
@@ -269,10 +277,30 @@ void QNVimPlugin::syncCursorFromVim(const QVariantList &pos, const QVariantList 
         else
             ++p;
 
-        QTextCursor cursor = textEditor->textCursor();
-        cursor.setPosition(a);
-        cursor.setPosition(p, QTextCursor::KeepAnchor);
-        textEditor->setBlockSelection(cursor);
+        auto mtc = Utils::MultiTextCursor();
+        const auto &tabs = textEditor->textDocument()->tabSettings();
+        auto document = mtc.mainCursor().document();
+
+        const auto firstBlock = document->findBlock(a);
+        const auto lastBlock = document->findBlock(p);
+
+        for (auto currentBlock = firstBlock; //
+             currentBlock != lastBlock.next(); //
+             currentBlock = currentBlock.next()) {
+            auto newCursor = QTextCursor(currentBlock);
+
+            auto cursorAnchorOffset = tabs.positionAtColumn(currentBlock.text(), a);
+            auto newCursorAnchor = currentBlock.position() + cursorAnchorOffset;
+
+            newCursor.setPosition(newCursorAnchor);
+
+            auto cursorPosOffset = tabs.positionAtColumn(currentBlock.text(), p);
+            auto newCursorPosition = currentBlock.position() + cursorPosOffset;
+            newCursor.setPosition(newCursorPosition, QTextCursor::KeepAnchor);
+
+            mtc.addCursor(newCursor);
+        }
+        textEditor->setMultiTextCursor(mtc);
     } else {
         QTextCursor cursor = textEditor->textCursor();
         cursor.clearSelection();
