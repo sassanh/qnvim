@@ -146,9 +146,12 @@ void QNVimPlugin::syncSelectionToVim(Core::IEditor *editor) {
         // because it is the cursor user controls with hjkl
         auto nvimPos = mainCursor.position();
 
-        // NOTE: Theoretically, it is not alwaus the case,
+        // NOTE: Theoretically, it is not always the case
         // that the main cursor is at the ends of mtc array,
-        // but for creating our own block selections it works
+        // but for creating our own block selections it works,
+        // because we create cursors one after another, where
+        // main cursor is at the end or in the beginning.
+        // @see syncCursorFromVim
         auto lastCursor = mainCursor == *mtc.begin() ? *(mtc.end() - 1) : *mtc.begin();
         auto nvimAnchor = lastCursor.anchor();
 
@@ -306,7 +309,16 @@ void QNVimPlugin::syncCursorFromVim(const QVariantList &pos, const QVariantList 
         };
 
         auto mtc = Utils::MultiTextCursor();
-        for (auto curBlock = firstBlock; curBlock != after(lastBlock); curBlock = after(curBlock)) {
+        for (auto curBlock = firstBlock; //
+             curBlock.isValid() && curBlock != after(lastBlock); //
+             curBlock = after(curBlock)) {
+
+            auto columnsCountInCurBlock = tabs.columnCountForText(curBlock.text());
+
+            // Skip cursor, if it goes out of the block
+            if (columnsCountInCurBlock < localAnchor && columnsCountInCurBlock < localPos)
+                continue;
+
             auto newCursor = QTextCursor(curBlock);
 
             auto anchorBoundOffset = tabs.positionAtColumn(curBlock.text(), localAnchor);
