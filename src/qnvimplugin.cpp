@@ -897,11 +897,11 @@ void QNVimPlugin::handleNotification(const QByteArray &name, const QVariantList 
                                                    << "h"
                                                    << "pro")
                                         .contains(fileInfo.suffix(), Qt::CaseInsensitive))
-                                    e = Core::EditorManager::openEditor(filename);
+                                    e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
                                 else
-                                    e = Core::EditorManager::openEditor(filename, "Core.PlainTextEditor");
+                                    e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename), "Core.PlainTextEditor");
                             } else {
-                                e = Core::EditorManager::openEditor(filename);
+                                e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
                             }
                         } else {
                             qDebug(Main) << 123;
