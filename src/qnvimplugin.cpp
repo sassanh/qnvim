@@ -672,7 +672,7 @@ autocmd VimEnter * let $MYQVIMRC=substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 
         options.insert("ext_hlstate", true);
         options.insert("rgb", true);
         NeovimQt::MsgpackRequest *request = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
-        request->setTimeout(2000);
+        request->setTimeout(10000);
         connect(request, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
         connect(request, &NeovimQt::MsgpackRequest::timeout, [=]() {
             qCritical(Main) << "Neovim: Connection timed out!";
