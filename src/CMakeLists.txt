@@ -21,4 +21,6 @@ add_qtc_plugin(QNVim
     qnvimconstants.h
     qnvimplugin.cpp
     qnvimplugin.h
+    qnvimcore.cpp
+    qnvimcore.h
 )
