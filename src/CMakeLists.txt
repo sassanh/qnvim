@@ -23,4 +23,9 @@ add_qtc_plugin(QNVim
     qnvimplugin.h
     qnvimcore.cpp
     qnvimcore.h
+    cmdline.cpp
+    cmdline.h
+    automap.h
+    textediteventfilter.cpp
+    textediteventfilter.h
 )

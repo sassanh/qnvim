@@ -11,6 +11,7 @@ namespace Internal {
 
 class QNVimCore;
 class NumbersColumn;
+class CmdLine;
 
 class QNVimPlugin : public ExtensionSystem::IPlugin {
     Q_OBJECT
