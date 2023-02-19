@@ -28,6 +28,7 @@ namespace QNVim {
 namespace Internal {
 
 class NumbersColumn;
+class CmdLine;
 
 /**
  * Encapsulates plugin's behavior with an assumption, that it is enabled.
@@ -38,7 +39,7 @@ class QNVimCore : public QObject {
     explicit QNVimCore(QObject *parent = nullptr);
     virtual ~QNVimCore();
 
-    bool eventFilter(QObject *object, QEvent *event) override;
+    NeovimQt::NeovimConnector *nvimConnector();
 
   protected:
     QString filename(Core::IEditor * = nullptr) const;
@@ -66,9 +67,6 @@ class QNVimCore : public QObject {
     void redraw(const QVariantList &);
     void updateCursorSize();
 
-    bool mEnabled = true;
-
-    QPlainTextEdit *mCMDLine = nullptr;
     NumbersColumn *mNumbersColumn = nullptr;
     NeovimQt::NeovimConnector *mNVim = nullptr;
     unsigned mVimChanges = 0;
@@ -90,15 +88,6 @@ class QNVimCore : public QObject {
     bool mRelativeNumber = true;
     bool mWrap = false;
 
-    bool mCMDLineVisible = false;
-    QString mCMDLineContent;
-    QString mCMDLineDisplay;
-    QString mMessageLineDisplay;
-    int mCMDLinePos;
-    QChar mCMDLineFirstc;
-    QString mCMDLinePrompt;
-    int mCMDLineIndent;
-
     QByteArray mUIMode = "normal";
     QByteArray mMode = "n";
     QPoint mCursor;
@@ -109,7 +98,7 @@ class QNVimCore : public QObject {
 
     int mSavedCursorFlashTime = 0;
 
-  signals:
+    std::unique_ptr<CmdLine> m_cmdLine;
 };
 
 } // namespace Internal
