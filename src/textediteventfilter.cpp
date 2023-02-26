@@ -6,6 +6,7 @@
 #include <QPlainTextEdit>
 
 #include <input.h>
+#include <neovimconnector.h>
 
 #include <texteditor/texteditor.h>
 

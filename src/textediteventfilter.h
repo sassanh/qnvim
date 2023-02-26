@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <NeovimConnector.h>
 #include <QObject>
+
+namespace NeovimQt {
+class NeovimConnector;
+}
 
 namespace QNVim::Internal {
 

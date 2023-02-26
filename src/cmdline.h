@@ -4,14 +4,16 @@
 
 #include <coreplugin/editormanager/ieditor.h>
 
-#include <NeovimConnector.h>
-
 #include "automap.h"
 
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
 class QTextCursor;
 QT_END_NAMESPACE
+
+namespace NeovimQt {
+class NeovimConnector;
+}
 
 namespace QNVim::Internal {
 

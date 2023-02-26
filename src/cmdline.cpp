@@ -16,6 +16,8 @@
 #include <texteditor/texteditorsettings.h>
 #include <coreplugin/editormanager/editormanager.h>
 
+#include <neovimconnector.h>
+
 namespace QNVim::Internal {
 
 CmdLine::CmdLine(QObject *parent) : QObject(parent) {
