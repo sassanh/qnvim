@@ -16,7 +16,7 @@
 
 #include <gui/input.h>
 #include <msgpackrequest.h>
-#include <NeovimConnector.h>
+#include <neovimconnector.h>
 
 #include <projectexplorer/project.h>
 #include <projectexplorer/session.h>
