@@ -4,6 +4,7 @@
 
 #include <QObject>
 
+#include <unordered_map>
 #include <concepts>
 
 namespace QNVim::Internal {
