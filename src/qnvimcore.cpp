@@ -117,7 +117,7 @@ function! SetCursor(line, col)\n\
     endif\n\
     call cursor(a:line, a:col)\n\
 endfunction\n\
-autocmd VimEnter * let $MYQVIMRC=substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', v:true) | source $MYQVIMRC")
+autocmd VimEnter * let $MYQVIMRC=substitute(substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 'g'), 'init.lua$', 'qnvim.vim', 'g') | source $MYQVIMRC")
                                                       .arg(mNVim->channel()).toUtf8());
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
                 this, &QNVimCore::handleNotification);
