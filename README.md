@@ -1,8 +1,6 @@
 <!--SPDX-FileCopyrightText: none-->
 <!--SPDX-License-Identifier: CC0-1.0-->
 
-Please check [qtc-6 branch](https://github.com/sassanh/qnvim/tree/qtc-6) for the latest version which is compatible with the latest version of Qt Creator.
-
 # qnvim
 
 A Qt Creator plugin that helps those who are used to editing text in Neovim/Vim
