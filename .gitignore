@@ -45,6 +45,8 @@ tags
 
 build*/
 compile_commands.json
+.cache
+.DS_Store
 
 # Downloaded QtCreator path
 external/qtcreator/dist*/

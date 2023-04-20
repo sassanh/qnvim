@@ -48,7 +48,7 @@ and operating system. Then:
 
 ### Building from source
 
-> ⚠️ **Warning** ⚠️ 
+> ⚠️ **Warning** ⚠️
 >
 > As per [Qt policies](https://doc.qt.io/qtcreator-extending/coding-style.html#binary-and-source-compatibility)
 > major and minor versions of Qt Creator Plugin APIs are not compatible,

@@ -13,6 +13,7 @@ option(FETCH_QTC "Download Qt Creator development files automatically" ON)
 
 add_subdirectory(external)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
