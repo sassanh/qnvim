@@ -1,10 +1,13 @@
 {
-    \"Name\" : \"QNVim\",
-    \"Version\" : \"10.0.0_1\",
-    \"Vendor\" : \"Sassan Haradji\",
-    \"Copyright\" : \"(C) Sassan Haradji\",
-    \"License\" : \"MIT\",
-    \"Description\" : \"Neovim Backend for Qt Creator\",
-    \"Url\" : \"https://github.com/sassanh/qnvim\",
-    $$dependencyList
+    "Id" : "qnvim",
+    "Name" : "QNVim",
+    "Version" : "${IDE_VERSION}",
+    "CompatVersion" : "${IDE_VERSION_COMPAT}",
+    "Vendor" : "Sassan Haradji",
+    "VendorId" : "sassanh",
+    "Copyright" : "(C) Sassan Haradji",
+    "License" : "MIT",
+    "Description" : "Neovim Backend for Qt Creator",
+    "Url" : "https://github.com/sassanh/qnvim",
+    ${IDE_PLUGIN_DEPENDENCIES}
 }

@@ -17,9 +17,8 @@
 namespace QNVim {
 namespace Internal {
 
-bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString) {
+Utils::Result<> QNVimPlugin::initialize(const QStringList &arguments) {
     Q_UNUSED(arguments)
-    Q_UNUSED(errorString)
 
     new HelpEditorFactory();
     new TerminalEditorFactory();
@@ -39,7 +38,7 @@ bool QNVimPlugin::initialize(const QStringList &arguments, QString *errorString)
 
     m_core = std::make_unique<QNVimCore>();
 
-    return true;
+    return {};
 }
 
 void QNVimPlugin::extensionsInitialized() {
@@ -56,13 +55,6 @@ ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown() {
     return SynchronousShutdown;
 }
 
-bool QNVimPlugin::eventFilter(QObject *object, QEvent *event) {
-    if (m_core)
-        return m_core->eventFilter(object, event);
-    else
-        return false;
-}
-
 void QNVimPlugin::toggleQNVim() {
     qDebug(Main) << "QNVimPlugin::toggleQNVim";
 
@@ -72,13 +64,13 @@ void QNVimPlugin::toggleQNVim() {
         m_core = std::make_unique<QNVimCore>();
 }
 
-HelpEditorFactory::HelpEditorFactory() : PlainTextEditorFactory() {
+HelpEditorFactory::HelpEditorFactory() : TextEditorFactory() {
     setId("Help");
     setDisplayName("Help");
     addMimeType("text/plain");
 }
 
-TerminalEditorFactory::TerminalEditorFactory() : PlainTextEditorFactory() {
+TerminalEditorFactory::TerminalEditorFactory() : TextEditorFactory() {
     setId("Terminal");
     setDisplayName("Terminal");
     addMimeType("text/plain");

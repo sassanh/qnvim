@@ -38,6 +38,8 @@ class QNVimCore : public QObject {
     explicit QNVimCore(QObject *parent = nullptr);
     virtual ~QNVimCore();
 
+    NeovimQt::NeovimConnector *nvimConnector() const { return mNVim; }
+
     bool eventFilter(QObject *object, QEvent *event) override;
 
   protected:

@@ -41,10 +41,10 @@ Go to the releases section and download the version of the plugin matching your 
 
 > ⚠️ **Warning** ⚠️
 >
-> As per Qt policies, major and minor versions of Qt Creator Plugin APIs are not compatible. This means that there is no guarantee that the plugin version on the master branch is compatible with any version of Qt Creator not specified in the cmake/FetchQtCreator.cmake file.
+> As per Qt policies, major and minor versions of Qt Creator Plugin APIs are not compatible. This means that there is no guarantee that the plugin version on the master branch is compatible with any version of Qt Creator not specified in `external/qtcreator/version.cmake`.
 
-1. Make sure you have Qt development files installed on your system.
-2. Clone this repository and go to its directory. Checkout a Git tag that is compatible with your Qt Creator version.
+1. Make sure you have Qt 6.8+ development files and CMake 3.22+ installed on your system.
+2. Clone this repository and go to its directory. Checkout a Git tag that is compatible with your Qt Creator version (currently Qt Creator 20.0.1, Qt 6.8.3, C++20).
 3. `cmake -S . -B build/`.
 4. `cmake --build build/`. The compiled plugin will be inside `build/lib/qtcreator/plugins`.
 5. Open Qt Creator > Help > About Plugins > Install Plugin... Select the plugin you have built earlier.
