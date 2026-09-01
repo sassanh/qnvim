@@ -2,15 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/crow-translate/crow-translate/tree/HEAD)
+## [Unreleased](https://github.com/sassanh/qnvim/compare/v20.0.1...HEAD)
 
-[Full Changelog](https://github.com/crow-translate/crow-translate/compare/2.3.1...HEAD)
+[Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.1...HEAD)
+
+## [20.0.1](https://github.com/sassanh/qnvim/tree/v20.0.1) (2026-09-02)
+
+[Full Changelog](https://github.com/sassanh/qnvim/compare/v10.0.0_1...v20.0.1)
 
 **Changed**
 
-- Fix `number` not showing correctly when `relativenumber` was enabled.
-- Remove cursor blinking.
-- Fix incorrect plugin toggling.
+- Bump Qt Creator 10.0.0 -> 20.0.1, Qt 6.2.4 -> 6.8.3, C++17 -> C++20.
+- Update CI to Qt 6.8.3 / CMake 4.1.2 / Ninja 1.13.1 (windows-2022 / ubuntu-24.04 / macos-14, GCC 16), fix Homebrew Qt ABI mismatch.
+- Fix `NVIM_LISTEN_ADDRESS` inheritance when launched from inside Neovim and guard `nvim_input` with `isReady` (API level 2).
+- Add per-editor CmdLine widget and update LICENSE credits for Mikhail Zolotukhin (2022).
+- Remove SPDX headers, LICENSES/, .reuse/ and reuse.yml; keep single LICENSE (2018-2026 Sassan Haradji, 2022 Mikhail Zolotukhin).
 
 ## [1.2.0](https://github.com/sassanh/qnvim/tree/1.2.0) (2019-09-28)
 
