@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2018-2019 Sassan Haradji <sassanh@gmail.com>
-// SPDX-FileCopyrightText: 2023 Mikhail Zolotukhin <mail@gikari.com>
-// SPDX-License-Identifier: MIT
-
 #include "qnvimplugin.h"
 
 #include "qnvimcore.h"

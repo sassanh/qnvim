@@ -1,5 +1,3 @@
-// SPDX-FileCopyrightText: 2023 Mikhail Zolotukhin <mail@gikari.com>
-// SPDX-License-Identifier: MIT
 #include "textediteventfilter.h"
 
 #include <QKeyEvent>

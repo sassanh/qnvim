@@ -1,6 +1,3 @@
-<!--SPDX-FileCopyrightText: none-->
-<!--SPDX-License-Identifier: CC0-1.0-->
-
 # qnvim
 
 qnvim is a Qt Creator plugin for users who like editing text in Neovim/Vim and also want to use Qt Creator features. This plugin combines the power of Neovim and Qt Creator.

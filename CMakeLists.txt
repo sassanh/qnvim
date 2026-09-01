@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
-# SPDX-License-Identifier: MIT
-
 cmake_minimum_required(VERSION 3.22)
 
 if (POLICY CMP0135)

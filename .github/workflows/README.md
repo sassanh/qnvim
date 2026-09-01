@@ -1,6 +1,3 @@
-<!--SPDX-FileCopyrightText: None-->
-<!--SPDX-License-Identifier: CC0-1.0-->
-
 # GitHub Actions & Workflows
 
 The `build_cmake.yml` in this directory adds a [GitHub action][1] and workflow that builds

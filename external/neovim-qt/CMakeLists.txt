@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
-# SPDX-License-Identifier: MIT
-
 include(FetchContent)
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")

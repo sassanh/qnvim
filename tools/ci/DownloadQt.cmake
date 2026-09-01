@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2022 Mikhail Zolotukhin <mail@gikari.com>
-# SPDX-License-Identifier: MIT
-
 set(qt_version "$ENV{QT_VERSION}")
 
 # NOTE: This script is deprecated for CI (replaced by jurplel/install-qt-action).

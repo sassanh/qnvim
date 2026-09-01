@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2018-2019 Sassan Haradji <sassanh@gmail.com>
-// SPDX-License-Identifier: MIT
-
 #include "numbers_column.h"
 
 #include <texteditor/fontsettings.h>
