@@ -8,6 +8,8 @@
 #include <texteditor/texteditor.h>
 #include <texteditor/texteditorsettings.h>
 
+#include <utils/plaintextedit/plaintextedit.h>
+
 #include <QPainter>
 #include <QScrollBar>
 
@@ -17,7 +19,10 @@ namespace Internal {
 NumbersColumn::NumbersColumn() {
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
     connect(TextEditor::TextEditorSettings::instance(),
-            &TextEditor::TextEditorSettings::displaySettingsChanged,
+            &TextEditor::TextEditorSettings::fontSettingsChanged,
+            this, &NumbersColumn::updateGeometry);
+    connect(TextEditor::TextEditorSettings::instance(),
+            &TextEditor::TextEditorSettings::behaviorSettingsChanged,
             this, &NumbersColumn::updateGeometry);
 }
 
@@ -27,7 +32,7 @@ void NumbersColumn::setEditor(TextEditor::TextEditorWidget *editor) {
 
     if (mEditor) {
         mEditor->removeEventFilter(this);
-        disconnect(mEditor, &QPlainTextEdit::cursorPositionChanged,
+        disconnect(mEditor, &Utils::PlainTextEdit::cursorPositionChanged,
                    this, &NumbersColumn::updateGeometry);
         disconnect(mEditor->verticalScrollBar(), &QScrollBar::valueChanged,
                    this, &NumbersColumn::updateGeometry);
@@ -40,7 +45,7 @@ void NumbersColumn::setEditor(TextEditor::TextEditorWidget *editor) {
 
     if (mEditor) {
         mEditor->installEventFilter(this);
-        connect(mEditor, &QPlainTextEdit::cursorPositionChanged,
+        connect(mEditor, &Utils::PlainTextEdit::cursorPositionChanged,
                 this, &NumbersColumn::updateGeometry);
         connect(mEditor->verticalScrollBar(), &QScrollBar::valueChanged,
                 this, &NumbersColumn::updateGeometry);

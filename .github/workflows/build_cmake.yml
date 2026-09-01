@@ -7,9 +7,9 @@ on: [ push, pull_request ]
 
 env:
   PLUGIN_NAME: QNVim
-  QT_VERSION: 6.2.4
-  CMAKE_VERSION: 3.22.4
-  NINJA_VERSION: 1.10.1
+  QT_VERSION: 6.8.3
+  CMAKE_VERSION: 4.1.2
+  NINJA_VERSION: 1.13.1
 
 jobs:
   build:
@@ -19,23 +19,23 @@ jobs:
       matrix:
         config:
         - {
-            name: "Windows MSVC 2022", artifact: "Windows-x64",
+            name: "Windows", artifact: "Windows-x64",
             os: windows-2022,
             cc: "cl", cxx: "cl",
           }
         - {
-            name: "Ubuntu GCC 11", artifact: "Linux-x64",
-            os: ubuntu-22.04,
-            cc: "gcc", cxx: "g++"
+            name: "Linux", artifact: "Linux-x64",
+            os: ubuntu-24.04,
+            cc: "gcc-16", cxx: "g++-16"
           }
         - {
-            name: "macOS Clang 14", artifact: "macOS-x64",
-            os: macos-12,
+            name: "macOS", artifact: "macOS-x64",
+            os: macos-14,
             cc: "clang", cxx: "clang++"
           }
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
 
     - name: Download Ninja and CMake
       run: cmake -P tools/ci/DownloadNinjaAndCMake.cmake
@@ -43,9 +43,22 @@ jobs:
     - name: Install system libs
       run: cmake -P tools/ci/InstallSystemLibs.cmake
 
-    - name: Download Qt
-      id: qt
-      run: cmake -P tools/ci/DownloadQt.cmake
+    - name: Install GCC 16
+      if: matrix.config.os == 'ubuntu-24.04'
+      run: |
+        sudo apt update
+        sudo apt install -y software-properties-common
+        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+        sudo apt update
+        sudo apt install -y gcc-16 g++-16
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-16 100 --slave /usr/bin/g++ g++ /usr/bin/g++-16
+        gcc --version; g++ --version
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        cache: true
 
     # To create a package, we need a script, that comes with Qt Creator
     # This is why we fetch it first, before invoking CMake
@@ -69,11 +82,11 @@ jobs:
         ARTIFACT_SUFFIX: ${{ matrix.config.artifact }}
         CC: ${{ matrix.config.cc }}
         CXX: ${{ matrix.config.cxx }}
-        MACOSX_DEPLOYMENT_TARGET: "10.13"
-        QT_DIR: ${{ steps.qt.outputs.qt_dir }}
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        QT_DIR: ${{ env.Qt6_DIR }}/../../..
         QT_CREATOR_VERSION: ${{ steps.qt_creator.outputs.qtc_ver }}
 
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v5
       id: upload_artifact
       with:
         path: ./${{ env.PLUGIN_NAME }}-${{ steps.qt_creator.outputs.qtc_ver }}-${{ matrix.config.artifact }}.7z
@@ -83,7 +96,7 @@ jobs:
 
   release:
     if: contains(github.ref, 'tags/v')
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     needs: build
 
     steps:
@@ -107,21 +120,21 @@ jobs:
         config:
         - {
             name: "Windows Latest x64", artifact: "Windows-x64.7z",
-            os: ubuntu-22.04
+            os: ubuntu-latest
           }
         - {
             name: "Linux Latest x64", artifact: "Linux-x64.7z",
-            os: ubuntu-22.04
+            os: ubuntu-latest
           }
         - {
             name: "macOS Latest x64", artifact: "macOS-x64.7z",
-            os: macos-12
+            os: macos-latest
           }
     needs: release
 
     steps:
     - name: Download artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v5
       with:
         name: ${{ env.PLUGIN_NAME }}-${{ needs.release.outputs.qtc_ver }}-${{ matrix.config.artifact }}
         path: ./
