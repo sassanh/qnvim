@@ -37,6 +37,7 @@ class CmdLineWidget : public QWidget {
     QTextCursor textCursor() const;
 
     void setReadOnly(bool value);
+    bool isReadOnly() const;
 
   private:
     void adjustSize(const QSizeF &newSize);

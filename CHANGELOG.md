@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file. This projec
 
 - Files whose names contain characters that are special in Ex commands (spaces, quotes, backslashes) can now be opened from Qt Creator: their names are escaped with Neovim's `fnameescape()` (previously Neovim replied `E32: No file name` and the editor ended up without a buffer).
 
+- The Neovim command line in the editor view no longer keeps showing an old command or message: it is now cleared and hidden when Neovim clears its message.
+
 **Changed**
 
 - The Neovim command line now lives in the editor view, like Neovim's own command line, instead of in Qt Creator's status bar: it is easier to notice, longer commands fit and Neovim messages are shown in full and can be scrolled. This finishes the per-editor command line widget by Mikhail Zolotukhin from [#57](https://github.com/sassanh/qnvim/pull/57), which was present in the code but never wired up ([#56](https://github.com/sassanh/qnvim/issues/56)).

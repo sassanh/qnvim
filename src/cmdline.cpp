@@ -127,12 +127,18 @@ void CmdLine::showMessage(QStringView message) {
 }
 
 void CmdLine::clear() {
-    auto currentCmd = currentWidget();
+    // Messages can be shown on any of the widgets (e.g. on the widget of a
+    // buffer whose editor was just closed), so clear all of them. Message
+    // widgets are read-only, hide them; a command line being edited must stay
+    // visible.
+    for (auto &[_, cmdWidget] : m_uniqueWidgets) {
+        if (!cmdWidget)
+            continue;
 
-    if (!currentCmd)
-        return;
-
-    currentCmd->clear();
+        cmdWidget->clear();
+        if (cmdWidget->isReadOnly())
+            cmdWidget->hide();
+    }
 }
 
 void CmdLine::editorOpened(Core::IEditor &editor) {
@@ -278,6 +284,10 @@ QTextCursor CmdLineWidget::textCursor() const {
 
 void CmdLineWidget::setReadOnly(bool value) {
     m_pTextWidget->setReadOnly(value);
+}
+
+bool CmdLineWidget::isReadOnly() const {
+    return m_pTextWidget->isReadOnly();
 }
 
 void CmdLineWidget::adjustSize(const QSizeF &newTextDocumentSize) {
