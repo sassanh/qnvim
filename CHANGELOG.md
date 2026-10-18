@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file. This projec
 
 - Sync the editor viewport with Neovim's window: commands that scroll Neovim's window without moving the cursor (`zz`, `zt`, `zb`, `<C-e>`, `<C-y>`, `<C-d>`, `<C-u>`, `H`, `M`, `L`, ...) used to leave the Qt Creator editor view where it was, so they appeared to do nothing. The editor is now scrolled to Neovim's top line ([#15](https://github.com/sassanh/qnvim/issues/15)).
 
+**Changed**
+
+- The Neovim command line now lives in the editor view, like Neovim's own command line, instead of in Qt Creator's status bar: it is easier to notice, longer commands fit and Neovim messages are shown in full and can be scrolled. This finishes the per-editor command line widget by Mikhail Zolotukhin from [#57](https://github.com/sassanh/qnvim/pull/57), which was present in the code but never wired up ([#56](https://github.com/sassanh/qnvim/issues/56)).
+
 ## [20.0.2](https://github.com/sassanh/qnvim/tree/v20.0.2) (2026-10-18)
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.1...v20.0.2)

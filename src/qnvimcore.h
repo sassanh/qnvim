@@ -5,10 +5,6 @@
 #include <QObject>
 #include <QPoint>
 
-QT_BEGIN_NAMESPACE
-class QPlainTextEdit;
-QT_END_NAMESPACE
-
 namespace Core {
 class IEditor;
 }
@@ -24,6 +20,7 @@ class NeovimConnector;
 namespace QNVim {
 namespace Internal {
 
+class CmdLine;
 class NumbersColumn;
 
 /**
@@ -68,7 +65,7 @@ class QNVimCore : public QObject {
 
     bool mEnabled = true;
 
-    QPlainTextEdit *mCMDLine = nullptr;
+    CmdLine *m_cmdLine = nullptr;
     NumbersColumn *mNumbersColumn = nullptr;
     NeovimQt::NeovimConnector *mNVim = nullptr;
     unsigned mVimChanges = 0;
@@ -89,15 +86,6 @@ class QNVimCore : public QObject {
     bool mNumber = true;
     bool mRelativeNumber = true;
     bool mWrap = false;
-
-    bool mCMDLineVisible = false;
-    QString mCMDLineContent;
-    QString mCMDLineDisplay;
-    QString mMessageLineDisplay;
-    int mCMDLinePos;
-    QChar mCMDLineFirstc;
-    QString mCMDLinePrompt;
-    int mCMDLineIndent;
 
     QByteArray mUIMode = "normal";
     QByteArray mMode = "n";

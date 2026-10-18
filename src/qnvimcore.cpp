@@ -1,5 +1,6 @@
 #include "qnvimcore.h"
 
+#include "cmdline.h"
 #include "numbers_column.h"
 #include "log.h"
 
@@ -7,7 +8,6 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/icontext.h>
-#include <coreplugin/statusbarmanager.h>
 
 #include <gui/input.h>
 #include <msgpackrequest.h>
@@ -52,19 +52,6 @@ namespace Internal {
 QNVimCore::QNVimCore(QObject *parent)
     : QObject{parent} {
     qDebug(Main) << "QNVimCore::constructor";
-
-    mCMDLine = new QPlainTextEdit;
-    Core::StatusBarManager::addStatusBarWidget(mCMDLine, Core::StatusBarManager::First);
-    mCMDLine->document()->setDocumentMargin(0);
-    mCMDLine->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    mCMDLine->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    mCMDLine->setLineWrapMode(QPlainTextEdit::NoWrap);
-    mCMDLine->setMinimumWidth(200);
-    mCMDLine->setFocusPolicy(Qt::StrongFocus);
-    mCMDLine->installEventFilter(this);
-    mCMDLine->setFont(TextEditor::TextEditorSettings::instance()->fontSettings().font());
-
-    qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->hide();
 
     saveCursorFlashTime(QApplication::cursorFlashTime());
 
@@ -161,13 +148,12 @@ autocmd VimEnter * let $MYQVIMRC=substitute(substitute($MYVIMRC, 'init.vim$', 'q
         mNVim->api2()->nvim_subscribe("Gui");
         mNVim->api2()->nvim_subscribe("api-buffer-updates");
     });
+
+    m_cmdLine = new CmdLine(this);
 }
 
 QNVimCore::~QNVimCore()
 {
-    qobject_cast<QWidget *>(mCMDLine->parentWidget()->children()[2])->show();
-    mCMDLine->deleteLater();
-
     disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged,
                this, &QNVimCore::saveCursorFlashTime);
     QApplication::setCursorFlashTime(mSavedCursorFlashTime);
@@ -211,9 +197,6 @@ QNVimCore::~QNVimCore()
 
     if (mNVim)
         mNVim->deleteLater();
-
-    if (mCMDLine)
-        Core::StatusBarManager::destroyStatusBarWidget(mCMDLine);
 }
 
 QString QNVimCore::filename(Core::IEditor *editor) const {
@@ -1014,38 +997,36 @@ void QNVimCore::redraw(const QVariantList &args) {
                 mSpecialColor = QRgb(val);
             }
         } else if (command == "cmdline_show") {
-            mCMDLineVisible = true;
-            QVariantList contentList = args[0].toList();
-            mCMDLineContent.clear();
+            auto content = QByteArray();
+            for (const auto &contentItem : args[0].toList())
+                content += contentItem.toList()[1].toByteArray();
 
-            for (const auto& contentItem : contentList)
-                mCMDLineContent += QString::fromUtf8(contentItem.toList()[1].toByteArray());
+            auto pos = args[1].toInt();
+            auto firstc = args[2].toString()[0];
+            auto prompt = QString::fromUtf8(args[3].toByteArray());
+            auto indent = args[4].toInt();
 
-            mCMDLinePos = args[1].toInt();
-            mCMDLineFirstc = args[2].toString()[0];
-            mCMDLinePrompt = QString::fromUtf8(args[3].toByteArray());
-            mCMDLineIndent = args[4].toInt();
+            m_cmdLine->onCmdLineShow(QString::fromUtf8(content), pos, firstc, prompt, indent);
         } else if (command == "cmdline_pos") {
-            mCMDLinePos = args[0].toInt();
+            m_cmdLine->onCmdLinePos(args[0].toInt());
         } else if (command == "cmdline_hide") {
-            mCMDLineVisible = false;
+            m_cmdLine->onCmdLineHide();
         } else if (command == "msg_show") {
-            QVariantList contentList = args[1].toList();
-            mMessageLineDisplay.clear();
-            for (const auto& contentItem : contentList)
-                mMessageLineDisplay += QString::fromUtf8(contentItem.toList()[1].toByteArray());
+            auto message = QString();
+            for (const auto &contentItem : args[1].toList())
+                message += QString::fromUtf8(contentItem.toList()[1].toByteArray());
+
+            m_cmdLine->showMessage(message);
         } else if (command == "msg_clear") {
-            mMessageLineDisplay.clear();
+            m_cmdLine->clear();
         } else if (command == "msg_history_show") {
-            QVariantList entries = args[1].toList();
-            mMessageLineDisplay.clear();
-
-            for (const auto& entry : entries) {
-                QVariantList contentList = entry.toList()[1].toList();
-
-                for (const auto& contentItem : contentList)
-                    mMessageLineDisplay += QString::fromUtf8(contentItem.toList()[1].toByteArray()) + '\n';
+            auto message = QString();
+            for (const auto &entry : args[1].toList()) {
+                for (const auto &contentItem : entry.toList()[1].toList())
+                    message += QString::fromUtf8(contentItem.toList()[1].toByteArray()) + '\n';
             }
+
+            m_cmdLine->showMessage(message);
         }
     }
 
@@ -1053,64 +1034,6 @@ void QNVimCore::redraw(const QVariantList &args) {
         syncFromVim();
 
     updateCursorSize();
-
-    QFontMetrics commandLineFontMetric(mCMDLine->font());
-    if (mCMDLineVisible) {
-        QString text = mCMDLineFirstc + mCMDLinePrompt + QString(mCMDLineIndent, ' ') + mCMDLineContent;
-
-        if (mCMDLine->toPlainText() != text)
-            mCMDLine->setPlainText(text);
-
-        static const auto endLineRegExp = QRegularExpression("[\n\r]");
-
-        const auto height = (text.count(endLineRegExp) + 1) * commandLineFontMetric.height();
-        auto width = 0;
-
-        const auto lines = text.split(endLineRegExp);
-        for (const auto& line : lines) {
-            width += commandLineFontMetric.horizontalAdvance(line);
-        }
-
-        if (mCMDLine->minimumWidth() != qMax(200, qMin(width + 10, 400)))
-            mCMDLine->setMinimumWidth(qMax(200, qMin(width + 10, 400)));
-
-        if (mCMDLine->minimumHeight() != qMax(25, qMin(height + 4, 400))) {
-            mCMDLine->setMinimumHeight(qMax(25, qMin(height + 4, 400)));
-            mCMDLine->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
-            mCMDLine->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
-            mCMDLine->parentWidget()->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
-        }
-
-        if (!mCMDLine->hasFocus())
-            mCMDLine->setFocus();
-
-        QTextCursor cursor = mCMDLine->textCursor();
-        if (cursor.position() != (QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos)) {
-            cursor.setPosition(QString(mCMDLineFirstc + mCMDLinePrompt).length() + mCMDLineIndent + mCMDLinePos);
-            mCMDLine->setTextCursor(cursor);
-        }
-
-        if (mUIMode == "cmdline_normal") {
-            if (mCMDLine->cursorWidth() != 1)
-                mCMDLine->setCursorWidth(1);
-        } else if (mUIMode == "cmdline_insert") {
-            if (mCMDLine->cursorWidth() != 11)
-                mCMDLine->setCursorWidth(11);
-        }
-    } else {
-        mCMDLine->setPlainText(mMessageLineDisplay);
-
-        if (mCMDLine->hasFocus())
-            textEditor->setFocus();
-
-        auto height = commandLineFontMetric.height();
-        mCMDLine->setMinimumHeight(qMax(25, qMin(height + 4, 400)));
-        mCMDLine->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
-        mCMDLine->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
-        mCMDLine->parentWidget()->parentWidget()->parentWidget()->setFixedHeight(qMax(25, qMin(height + 4, 400)));
-    }
-
-    mCMDLine->setToolTip(mCMDLine->toPlainText());
 }
 
 void QNVimCore::updateCursorSize() {

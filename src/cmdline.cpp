@@ -40,6 +40,12 @@ CmdLine::CmdLine(QObject *parent) : QObject(parent) {
                     this->editorOpened(*editor);
                 },
                 Qt::SingleShotConnection);
+
+            // The widget hierarchy can already be complete when the editor is
+            // opened, in which case no ParentChange will follow. Try right
+            // away; editorOpened() is idempotent and retries internally when
+            // the editor view is still missing.
+            this->editorOpened(*editor);
         });
 
     m_core = qobject_cast<QNVimCore *>(parent);
@@ -54,9 +60,10 @@ void CmdLine::onCmdLineShow(QStringView content,
 
     // Hide all cmds, that could possibly be in other splits
     for (auto &[_, cmdWidget] : m_uniqueWidgets)
-        cmdWidget->hide();
+        if (cmdWidget)
+            cmdWidget->hide();
 
-    auto currentCmdWidget = currentWidget();
+    auto currentCmdWidget = ensureCurrentWidget();
 
     if (!currentCmdWidget)
         return;
@@ -77,13 +84,15 @@ void CmdLine::onCmdLineShow(QStringView content,
 }
 
 void CmdLine::onCmdLineHide() {
-    auto currentCmd = currentWidget();
+    // Hide all cmds, that could possibly be in other splits. No widget is
+    // created here: if there is none, there is nothing to hide.
+    for (auto &[_, cmdWidget] : m_uniqueWidgets) {
+        if (!cmdWidget)
+            continue;
 
-    if (!currentCmd)
-        return;
-
-    currentCmd->clear();
-    currentCmd->hide();
+        cmdWidget->clear();
+        cmdWidget->hide();
+    }
 
     // Focus editor, since we are done
     auto currentEditor = Core::EditorManager::currentEditor();
@@ -92,7 +101,7 @@ void CmdLine::onCmdLineHide() {
 }
 
 void CmdLine::onCmdLinePos(int pos) {
-    auto currentCmd = currentWidget();
+    auto currentCmd = ensureCurrentWidget();
 
     if (!currentCmd)
         return;
@@ -105,7 +114,7 @@ void CmdLine::onCmdLinePos(int pos) {
 }
 
 void CmdLine::showMessage(QStringView message) {
-    auto currentCmd = currentWidget();
+    auto currentCmd = ensureCurrentWidget();
 
     if (!currentCmd)
         return;
@@ -128,8 +137,9 @@ void CmdLine::clear() {
 
 void CmdLine::editorOpened(Core::IEditor &editor) {
     qDebug(Main) << "CmdLine::editorOpened" << &editor;
-    if (m_widgets.contains(&editor))
-        return;
+    if (auto it = m_widgets.find(&editor);
+        it != m_widgets.end() && it->second && it->second->isValid())
+        return; // The editor already has a working CmdLine widget
 
     auto editorWidget = editor.widget();
     if (!editorWidget)
@@ -155,16 +165,23 @@ void CmdLine::editorOpened(Core::IEditor &editor) {
 
     CmdLineWidget *widgetToAdd = nullptr;
 
-    if (auto it = m_uniqueWidgets.find(editorView); it != m_uniqueWidgets.end())
+    if (auto it = m_uniqueWidgets.find(editorView);
+        it != m_uniqueWidgets.end() && it->second && it->second->isValid())
         widgetToAdd = it->second; // We already have a widget for that editor view
-    else
+    else {
         widgetToAdd = new CmdLineWidget(m_core, editorView);
+        if (!widgetToAdd->isValid()) {
+            // The editor view is not ready to embed the widget yet (its layout
+            // is missing). Try again the next time a CmdLine widget is needed.
+            widgetToAdd->deleteLater();
+            return;
+        }
+    }
 
-    if (!widgetToAdd)
-        return;
-
-    m_widgets.insert({&editor, widgetToAdd});
-    m_uniqueWidgets.insert_or_assign(editorView, std::move(widgetToAdd));
+    // insert_or_assign: an entry may exist from an earlier editor whose widget
+    // was destroyed (e.g. when its editor view was recreated).
+    m_widgets.insert_or_assign(&editor, widgetToAdd);
+    m_uniqueWidgets.insert_or_assign(editorView, widgetToAdd);
 }
 
 CmdLineWidget *CmdLine::currentWidget() const {
@@ -175,10 +192,26 @@ CmdLineWidget *CmdLine::currentWidget() const {
 
     auto it = m_widgets.find(currentEditor);
 
-    if (it == m_widgets.cend())
+    if (it == m_widgets.cend() || !it->second || !it->second->isValid())
         return nullptr;
 
     return it->second;
+}
+
+CmdLineWidget *CmdLine::ensureCurrentWidget() {
+    if (auto widget = currentWidget())
+        return widget;
+
+    auto currentEditor = Core::EditorManager::currentEditor();
+
+    if (!currentEditor)
+        return nullptr;
+
+    // No widget for the current editor: either none was created (e.g. its
+    // editor view has just been created) or the widget was destroyed together
+    // with its editor view. Create it now that the hierarchy is in place.
+    editorOpened(*currentEditor);
+    return currentWidget();
 }
 
 CmdLineWidget::CmdLineWidget(QNVimCore *core, QWidget *parent) : QWidget(parent) {

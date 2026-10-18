@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QPointer>
+
 #include <map>
 
 #include <coreplugin/editormanager/ieditor.h>
@@ -22,6 +24,9 @@ class CmdLineWidget : public QWidget {
   public:
     explicit CmdLineWidget(QNVimCore *core, QWidget *parent = nullptr);
 
+    // False if the widget failed to embed itself into the editor view
+    bool isValid() const { return m_pTextWidget != nullptr; }
+
     void setText(const QString &text);
     QString text() const;
     void clear();
@@ -36,7 +41,7 @@ class CmdLineWidget : public QWidget {
   private:
     void adjustSize(const QSizeF &newSize);
 
-    QPlainTextEdit *m_pTextWidget;
+    QPlainTextEdit *m_pTextWidget = nullptr;
 };
 
 class CmdLine : public QObject {
@@ -58,6 +63,7 @@ class CmdLine : public QObject {
   private:
     void editorOpened(Core::IEditor &editor);
     CmdLineWidget *currentWidget() const;
+    CmdLineWidget *ensureCurrentWidget();
 
     QNVimCore *m_core{};
 
@@ -70,11 +76,14 @@ class CmdLine : public QObject {
     // How many spaces the content of the cmdline should be indented
     int m_indent{};
 
-    // Maps every editor to its CmdLine widget
-    std::map<Core::IEditor *, CmdLineWidget *> m_widgets;
+    // Maps every editor to its CmdLine widget. The widgets are QPointers,
+    // because a widget is destroyed together with the editor view it is
+    // embedded into (Qt Creator recreates editor views, e.g. while restoring a
+    // session), and the map must not keep dangling pointers.
+    std::map<Core::IEditor *, QPointer<CmdLineWidget>> m_widgets;
 
     // One CmdLine widget per editor view (split), shared across editors in that view
-    std::map<QWidget *, CmdLineWidget *> m_uniqueWidgets;
+    std::map<QWidget *, QPointer<CmdLineWidget>> m_uniqueWidgets;
 };
 
 class ParentChangedFilter : public QObject {
