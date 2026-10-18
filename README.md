@@ -46,6 +46,8 @@ Go to the releases section and download the version of the plugin matching your 
 4. `cmake --build build/`. The compiled plugin will be inside `build/lib/qtcreator/plugins`.
 5. Open Qt Creator > Help > About Plugins > Install Plugin... Select the plugin you have built earlier.
 
+> **Note (macOS):** when the plugin loads, it resolves Qt from the Qt Creator it is installed into, so it can be built with a Qt newer than the version listed above as long as it's an official Qt build (Qt installer or [aqt](https://github.com/miurahr/aqtinstall)). Qt builds that link their libraries by absolute path (e.g. Homebrew's) produce plugins that fail to load with a symbol error; for those, `tools/RetargetPluginQt.sh` can fix up an already-built plugin (see the comments at the top of the script).
+
 #### Updating
 
 Before updating from source, delete the `build` directory from earlier to avoid problems such as [this](https://github.com/sassanh/qnvim/issues/8#issuecomment-485456543).

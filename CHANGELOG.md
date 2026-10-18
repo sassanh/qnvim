@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file. This projec
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.1...HEAD)
 
+**Fixed**
+
+- Fix macOS compilation failure caused by the SDK's `usr/include` leaking into the include path through the `Cups::Cups`/`ZLIB::ZLIB` imported targets (made `<cmath>` resolve to the C header instead of libc++'s wrapper).
+
+**Changed**
+
+- Document that on macOS the plugin binds to the Qt bundled in Qt Creator when it loads, and add `tools/RetargetPluginQt.sh` to retarget a plugin built against a Qt that links its frameworks by absolute path.
+
 ## [20.0.1](https://github.com/sassanh/qnvim/tree/v20.0.1) (2026-09-02)
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v10.0.0_1...v20.0.1)

@@ -38,4 +38,29 @@ if (NOT TARGET Qt6::TaskTree)
 endif()
 find_package(QtCreator REQUIRED COMPONENTS Core)
 
+if (APPLE)
+  # On macOS CMake's FindCups/FindZLIB report the SDK's usr/include as the package include
+  # directory. Qt links Cups::Cups (through Qt6::PrintSupport), so that directory reaches
+  # every Qt Widgets consumer as a -isystem flag. User -isystem directories are searched
+  # before the compiler's own C++ standard library directories, which makes <cmath> pick the
+  # C <math.h> instead of libc++'s wrapper and fails the build. The compiler already searches
+  # the SDK sysroot, so drop the redundant directory from those imported targets.
+  foreach(_pkg_target IN ITEMS Cups::Cups ZLIB::ZLIB)
+    if (TARGET ${_pkg_target})
+      get_target_property(_pkg_dirs ${_pkg_target} INTERFACE_INCLUDE_DIRECTORIES)
+      if (_pkg_dirs)
+        foreach(_pkg_dir IN LISTS _pkg_dirs)
+          if (_pkg_dir MATCHES "/usr/include/?$")
+            list(REMOVE_ITEM _pkg_dirs "${_pkg_dir}")
+          endif()
+        endforeach()
+        set_target_properties(${_pkg_target} PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_pkg_dirs}")
+      endif()
+      unset(_pkg_dirs)
+    endif()
+  endforeach()
+  unset(_pkg_target)
+  unset(_pkg_dir)
+endif()
+
 add_subdirectory(src)
