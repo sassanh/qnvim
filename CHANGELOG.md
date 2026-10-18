@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/sassanh/qnvim/compare/v20.0.1...HEAD)
+## [Unreleased](https://github.com/sassanh/qnvim/compare/v20.0.2...HEAD)
 
-[Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.1...HEAD)
+[Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.2...HEAD)
+
+## [20.0.2](https://github.com/sassanh/qnvim/tree/v20.0.2) (2026-10-18)
+
+[Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.1...v20.0.2)
 
 **Fixed**
 
