@@ -12,6 +12,12 @@ All notable changes to this project will be documented in this file. This projec
 
 - Help pages (`:help`) work and show their content: their editors used to crash Qt Creator (`std::bad_function_call`, the factory for them was missing its document creator) and the autocommand that was supposed to read the help files could never run, because qnvim's `BufReadCmd` autocommand suppresses Neovim's file reading. Help and terminal buffers now get proper plain text editors and the help files are read on Neovim's side.
 
+- Closing one of two editors that show the same Neovim buffer (e.g. the two halves of a Qt Creator split) no longer deletes that buffer in Neovim: the remaining editor now takes the buffer over instead of losing it.
+
+- `E516: No buffers were deleted` no longer appears when Neovim deletes a buffer that is open in Qt Creator (`:bd`, `:bw`, ...): qnvim used to ask Neovim to delete the buffer too while Neovim was already deleting it.
+
+- Files whose names contain characters that are special in Ex commands (spaces, quotes, backslashes) can now be opened from Qt Creator: their names are escaped with Neovim's `fnameescape()` (previously Neovim replied `E32: No file name` and the editor ended up without a buffer).
+
 **Changed**
 
 - The Neovim command line now lives in the editor view, like Neovim's own command line, instead of in Qt Creator's status bar: it is easier to notice, longer commands fit and Neovim messages are shown in full and can be scrolled. This finishes the per-editor command line widget by Mikhail Zolotukhin from [#57](https://github.com/sassanh/qnvim/pull/57), which was present in the code but never wired up ([#56](https://github.com/sassanh/qnvim/issues/56)).

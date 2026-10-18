@@ -476,6 +476,8 @@ void QNVimCore::syncToVim(Core::IEditor *editor, std::function<void()> callback)
         int bufferNumber = mBuffers[editor];
         auto request = mNVim->api2()->nvim_buf_set_lines(bufferNumber, 0, -1, true, text.toUtf8().split('\n'));
         connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
+            // The buffer now holds the editor content and may be read back.
+            mPendingPush.remove(bufferNumber);
             connect(mNVim->api2()->nvim_command(QStringLiteral("call cursor(%1,%2)").arg(line).arg(col).toUtf8()),
                     &NeovimQt::MsgpackRequest::finished, [=, this]() {
                         if (callback)
@@ -556,6 +558,19 @@ void QNVimCore::syncFromVim() {
             mText.chop(1);
 
             QString oldText = textEditor->toPlainText();
+
+            // Non-empty content means the buffer holds the editor content by
+            // now; from here on the buffer is authoritative and empty reads are
+            // genuine (Neovim can empty the buffer, e.g. `dd` or `u`).
+            if (!mText.isEmpty())
+                mPendingPush.remove(bufferNumber);
+
+            // A buffer that has not received the editor content yet is empty
+            // (qnvim suppresses Neovim's own file reading); such a read must not
+            // be applied: the editor content may still be loading from disk and
+            // must not be wiped by the empty buffer content.
+            if (mPendingPush.contains(bufferNumber) and mText.isEmpty() and !oldText.isEmpty())
+                return;
 
             Utils::Differ differ;
             auto diff = differ.diff(oldText, mText);
@@ -698,21 +713,32 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
             if (mSettingBufferFromVim > 0) {
                 mBuffers[editor] = mSettingBufferFromVim;
                 mEditors[mSettingBufferFromVim] = editor;
+                mPendingPush.insert(mSettingBufferFromVim);
                 initializeBuffer(mSettingBufferFromVim);
             } else {
-                QString f = filename;
-                if (f.contains('\\') or f.contains('\'') or f.contains('"') or f.contains(' ')) {
-                    static const auto regExp = QRegularExpression("[\\\"' ]");
-                    f = '"' + f.replace(regExp, "\\\1") + '"';
-                }
-
-                auto request = mNVim->api2()->nvim_command(QStringLiteral("e %1").arg(f).toUtf8());
-                connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
-                    auto request = mNVim->api2()->nvim_eval(QStringLiteral("bufnr('')").toUtf8());
-                    connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
-                        mBuffers[editor] = v.toInt();
-                        mEditors[v.toInt()] = editor;
-                        initializeBuffer(v.toInt());
+                // Escaping is needed for file names that contain characters
+                // which are special in Ex commands (spaces, quotes, ...).
+                // Quoting the name is not an option: a `"` starts a comment in
+                // Ex commands. fnameescape() does the escaping, so ask Neovim
+                // for it.
+                auto request = mNVim->api2()->nvim_call_function(QByteArrayLiteral("fnameescape"),
+                                                                 {filename});
+                connect(request, &NeovimQt::MsgpackRequest::finished, this,
+                        [=, this](quint32, quint64, const QVariant &escaped) {
+                    auto request = mNVim->api2()->nvim_command(
+                        QStringLiteral("e %1").arg(escaped.toString()).toUtf8());
+                    connect(request, &NeovimQt::MsgpackRequest::error, this,
+                            [](quint32, quint64, const QVariant &err) {
+                                qWarning(Main) << "Could not open file in Neovim:" << err;
+                            });
+                    connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
+                        auto request = mNVim->api2()->nvim_eval(QStringLiteral("bufnr('')").toUtf8());
+                        connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
+                            mBuffers[editor] = v.toInt();
+                            mEditors[v.toInt()] = editor;
+                            mPendingPush.insert(v.toInt());
+                            initializeBuffer(v.toInt());
+                        });
                     });
                 });
             }
@@ -721,7 +747,7 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
         Core::IDocument *document = editor->document();
 
         connect(document, &Core::IDocument::contentsChanged, this, [=, this]() {
-                auto buffer = mBuffers[editor];
+                auto buffer = mBuffers.value(editor);
                 QString bufferType = mBufferType[buffer];
                 if (!mEditors.contains(buffer) or (bufferType != "acwrite" and !bufferType.isEmpty()))
                     return;
@@ -768,12 +794,61 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
         mNumbersColumn->setEditor(nullptr);
 
     int bufferNumber = mBuffers[editor];
-    if (mNVim and mNVim->isReady())
-        mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(mBuffers[editor]).toUtf8());
     mBuffers.remove(editor);
+
+    // Another editor may still show the same Neovim buffer (e.g. the other half
+    // of a Qt Creator split, which shares the buffer); keep the buffer and let
+    // one of the remaining editors take over the mapping.
+    const QList<Core::IEditor *> remainingEditors = editorsForBuffer(bufferNumber);
+    if (!remainingEditors.isEmpty()) {
+        Core::IEditor *currentEditor = Core::EditorManager::currentEditor();
+        mEditors[bufferNumber] = remainingEditors.contains(currentEditor)
+                                     ? currentEditor
+                                     : remainingEditors.first();
+        return;
+    }
+
+    // When Neovim itself is deleting the buffer, it is already gone or being
+    // deleted there; `bd!` would only fail with E516 and show a bogus message.
+    if (!mVimInitiatedClose and mNVim and mNVim->isReady())
+        mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(bufferNumber).toUtf8());
+
     mEditors.remove(bufferNumber);
     mChangedTicks.remove(bufferNumber);
     mBufferType.remove(bufferNumber);
+    mPendingPush.remove(bufferNumber);
+}
+
+QList<Core::IEditor *> QNVimCore::editorsForBuffer(int buffer) const {
+    QList<Core::IEditor *> editors;
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        if (it.key() and it.value() == buffer)
+            editors.append(it.key());
+    }
+    return editors;
+}
+
+void QNVimCore::closeEditorsForBuffer(int buffer) {
+    const QList<Core::IEditor *> editors = editorsForBuffer(buffer);
+    if (editors.isEmpty())
+        return;
+
+    // The editor activation that follows must not try to switch Neovim to a
+    // buffer that is in the middle of being deleted.
+    if (editors.contains(Core::EditorManager::currentEditor()))
+        mSettingBufferFromVim = -1;
+
+    // Neovim is already deleting the buffer; editors that Qt Creator may open
+    // while they are being closed must not `bd!` it again. Closing editors can
+    // show a prompt (e.g. to save changes), which runs a nested event loop that
+    // can handle another buffer deletion; restoring the previous value keeps
+    // this flag armed for the duration of this call.
+    const bool vimInitiatedClose = mVimInitiatedClose;
+    mVimInitiatedClose = true;
+    Core::EditorManager::closeEditors(editors);
+    mVimInitiatedClose = vimInitiatedClose;
+
+    mSettingBufferFromVim = 0;
 }
 
 void QNVimCore::detectFiletype(int buffer) {
@@ -791,10 +866,20 @@ void QNVimCore::initializeBuffer(int buffer) {
         connect(
             mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -1),
             &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
-                syncToVim(mEditors[buffer], [=, this]() {
+                auto editor = mEditors.value(buffer); // the editor may be closed by now
+                if (!editor) {
+                    mPendingPush.remove(buffer);
+                    return;
+                }
+
+                // The filename is needed after the (asynchronous) content sync;
+                // remember it now, the editor may be gone by then.
+                const QString editorFilename = filename(editor);
+
+                syncToVim(editor, [=, this]() {
                     mNVim->api2()->nvim_buf_set_option(buffer, "undolevels", -123456);
                     mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
-                    if (bufferType.isEmpty() && QFile::exists(filename(mEditors[buffer])))
+                    if (bufferType.isEmpty() && QFile::exists(editorFilename))
                         mNVim->api2()->nvim_buf_set_option(buffer, "buftype", "acwrite");
                     detectFiletype(buffer);
                 });
@@ -802,6 +887,9 @@ void QNVimCore::initializeBuffer(int buffer) {
             Qt::DirectConnection);
     } else {
         mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
+        // The content of these buffers (help, terminal) comes from Neovim;
+        // there is nothing to push from Qt Creator.
+        mPendingPush.remove(buffer);
         syncFromVim();
     }
 }
@@ -831,6 +919,10 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 mBufferType[buffer] = bufferType;
                 if (mEditors.contains(buffer)) {
                     mText.clear();
+                    // The buffer is being (re)read (Neovim does not read it, the
+                    // BufReadCmd autocommand suppresses that); its content has to
+                    // come from Qt Creator again.
+                    mPendingPush.insert(buffer);
                     initializeBuffer(buffer);
                 } else {
                     if (cmd == "TermOpen")
@@ -887,7 +979,6 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                                 e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
                             }
                         } else {
-                            qDebug(Main) << 123;
                             if (bufferType == "terminal") {
                                 e = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);
                             } else if (bufferType == "help") {
@@ -907,25 +998,15 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 //     connect(mNVim->api2()->nvim_command("try | silent only! | catch | endtry"), &NeovimQt::MsgpackRequest::finished, callback);
                 // }
             } else if (cmd == "BufDelete") {
-                if (bufferListed and mEditors.contains(buffer) and mEditors[buffer]) {
-                    if (Core::EditorManager::currentEditor() == mEditors[buffer])
-                        mSettingBufferFromVim = -1;
-                    Core::EditorManager::closeEditors({mEditors[buffer]});
-                }
+                if (bufferListed)
+                    closeEditorsForBuffer(buffer);
             } else if (cmd == "BufHidden") {
                 if (
-                    (bufferHidden == "wipe" or bufferHidden == "delete" or bufferHidden == "unload" or bufferType == "help") and
-                    mEditors.contains(buffer) and mEditors[buffer]) {
-                    if (Core::EditorManager::currentEditor() == mEditors[buffer])
-                        mSettingBufferFromVim = -1;
-                    Core::EditorManager::closeEditors({mEditors[buffer]});
-                }
+                    bufferHidden == "wipe" or bufferHidden == "delete" or bufferHidden == "unload" or bufferType == "help")
+                    closeEditorsForBuffer(buffer);
             } else if (cmd == "BufWipeout") {
-                if (!bufferListed and mEditors.contains(buffer) and mEditors[buffer]) {
-                    if (Core::EditorManager::currentEditor() == mEditors[buffer])
-                        mSettingBufferFromVim = -1;
-                    Core::EditorManager::closeEditors({mEditors[buffer]});
-                }
+                if (!bufferListed)
+                    closeEditorsForBuffer(buffer);
             }
         }
     } else if (name == "redraw")

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QColor>
+#include <QList>
 #include <QMap>
 #include <QObject>
 #include <QPoint>
+#include <QSet>
 
 namespace Core {
 class IEditor;
@@ -57,6 +59,9 @@ class QNVimCore : public QObject {
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
 
+    QList<Core::IEditor *> editorsForBuffer(int) const;
+    void closeEditorsForBuffer(int);
+
     void initializeBuffer(int);
     void detectFiletype(int);
     void handleNotification(const QByteArray &, const QVariantList &);
@@ -73,6 +78,18 @@ class QNVimCore : public QObject {
     QMap<int, Core::IEditor *> mEditors;
     QMap<int, bool> mChangedTicks;
     QMap<int, QString> mBufferType;
+
+    // Buffers whose content has not been pushed from Qt Creator to Neovim yet.
+    // Such a buffer is empty to begin with (qnvim hijacks BufReadCmd), so reads
+    // of that state must not be applied to the editor: the editor content may
+    // just not have been pushed yet (it can still be loading from disk). The
+    // buffer is dropped from this set as soon as its content was pushed (or read
+    // back), from then on empty reads are genuine.
+    QSet<int> mPendingPush;
+
+    // True while editors are being closed because Neovim deleted their buffer:
+    // the buffer is already being deleted there, so it must not be `bd!`-ed again.
+    bool mVimInitiatedClose = false;
 
     QString mText;
     int mWidth = 80;
