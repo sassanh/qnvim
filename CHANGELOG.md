@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- Fix filetype detection never running for files opened in Qt Creator, which left `'filetype'` and filetype-plugin options such as `'commentstring'` empty for all filetypes ([#64](https://github.com/sassanh/qnvim/issues/64)).
 - Fix macOS compilation failure caused by the SDK's `usr/include` leaking into the include path through the `Cups::Cups`/`ZLIB::ZLIB` imported targets (made `<cmath>` resolve to the C header instead of libc++'s wrapper).
 
 **Changed**

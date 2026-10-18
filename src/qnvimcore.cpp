@@ -757,6 +757,15 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
     mBufferType.remove(bufferNumber);
 }
 
+void QNVimCore::detectFiletype(int buffer) {
+    // Because qnvim registers a BufReadCmd autocommand, Neovim never fires the
+    // BufRead event, so its filetype detection never runs for buffers opened
+    // through Qt Creator and options set by filetype plugins (such as
+    // 'commentstring') are left empty. Detect the filetype manually once the
+    // buffer contents have been synced from Qt Creator.
+    mNVim->api2()->nvim_command(QStringLiteral("lua if vim.api.nvim_buf_is_valid(%1) then vim.api.nvim_buf_call(%1, function() if vim.bo.filetype == '' then vim.cmd('filetype detect') end end) end").arg(buffer).toUtf8());
+}
+
 void QNVimCore::initializeBuffer(int buffer) {
     QString bufferType = mBufferType[buffer];
     if (bufferType == "acwrite" or bufferType.isEmpty()) {
@@ -768,6 +777,7 @@ void QNVimCore::initializeBuffer(int buffer) {
                     mNVim->api2()->nvim_buf_set_option(buffer, "modified", false);
                     if (bufferType.isEmpty() && QFile::exists(filename(mEditors[buffer])))
                         mNVim->api2()->nvim_buf_set_option(buffer, "buftype", "acwrite");
+                    detectFiletype(buffer);
                 });
             },
             Qt::DirectConnection);

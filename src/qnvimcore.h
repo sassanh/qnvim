@@ -61,6 +61,7 @@ class QNVimCore : public QObject {
     void editorAboutToClose(Core::IEditor *);
 
     void initializeBuffer(int);
+    void detectFiletype(int);
     void handleNotification(const QByteArray &, const QVariantList &);
     void redraw(const QVariantList &);
     void updateCursorSize();
