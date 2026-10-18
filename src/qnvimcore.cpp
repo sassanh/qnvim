@@ -87,6 +87,10 @@ QNVimCore::QNVimCore(QObject *parent)
     if (!oldListen.isEmpty())
         qputenv("NVIM_LISTEN_ADDRESS", oldListen);
 
+    connect(mNVim, &NeovimQt::NeovimConnector::error, this, [this]() {
+        qCritical(Main) << "Neovim:" << mNVim->errorString() << "- QNVim functionality is unavailable";
+    });
+
     connect(mNVim, &NeovimQt::NeovimConnector::ready, this, [=, this]() {
         mNVim->api2()->nvim_command(QStringLiteral("\
 let g:QNVIM_always_text=v:true\n\
@@ -169,11 +173,16 @@ QNVimCore::~QNVimCore()
     QApplication::setCursorFlashTime(mSavedCursorFlashTime);
 
     mNumbersColumn->deleteLater();
-    auto request = mNVim->api2()->nvim_command("q!");
-    connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
+    if (mNVim and mNVim->isReady()) {
+        auto request = mNVim->api2()->nvim_command("q!");
+        connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
+            mNVim->deleteLater();
+            mNVim = nullptr;
+        });
+    } else if (mNVim) {
         mNVim->deleteLater();
         mNVim = nullptr;
-    });
+    }
     disconnect(Core::EditorManager::instance(), &Core::EditorManager::editorAboutToClose,
                this, &QNVimCore::editorAboutToClose);
     disconnect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
@@ -615,6 +624,9 @@ void QNVimCore::saveCursorFlashTime(int cursorFlashTime) {
 }
 
 bool QNVimCore::eventFilter(QObject *object, QEvent *event) {
+    if (!mNVim or !mNVim->isReady())
+        return false;
+
     if (qobject_cast<TextEditor::TextEditorWidget *>(object) ||
         qobject_cast<QPlainTextEdit *>(object) ||
         qobject_cast<Utils::PlainTextEdit *>(object)) {
@@ -660,7 +672,7 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     auto project = ProjectExplorer::ProjectManager::projectForFile(
         Utils::FilePath::fromString(filename));
     qDebug(Main) << project;
-    if (project) {
+    if (project and mNVim and mNVim->isReady()) {
         QString projectDirectory = project->projectDirectory().toFSPathString();
         if (!projectDirectory.isEmpty())
             mNVim->api2()->nvim_command(QStringLiteral("cd %1").arg(projectDirectory).toUtf8());
@@ -750,7 +762,8 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
         mNumbersColumn->setEditor(nullptr);
 
     int bufferNumber = mBuffers[editor];
-    mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(mBuffers[editor]).toUtf8());
+    if (mNVim and mNVim->isReady())
+        mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(mBuffers[editor]).toUtf8());
     mBuffers.remove(editor);
     mEditors.remove(bufferNumber);
     mChangedTicks.remove(bufferNumber);

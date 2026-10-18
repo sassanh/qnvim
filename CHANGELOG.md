@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- Fix a Qt Creator crash when Neovim is not running: opening a file or typing used to send requests over a connection that was not ready yet (dereferencing a null `NeovimApi2`). The connection's readiness is now checked before every request and connection errors are logged instead.
 - Fix filetype detection never running for files opened in Qt Creator, which left `'filetype'` and filetype-plugin options such as `'commentstring'` empty for all filetypes ([#64](https://github.com/sassanh/qnvim/issues/64)).
 - Fix macOS compilation failure caused by the SDK's `usr/include` leaking into the include path through the `Cups::Cups`/`ZLIB::ZLIB` imported targets (made `<cmath>` resolve to the C header instead of libc++'s wrapper).
 

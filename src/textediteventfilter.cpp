@@ -16,6 +16,9 @@ TextEditEventFilter::TextEditEventFilter(NeovimQt::NeovimConnector *nvim, QObjec
 
 bool TextEditEventFilter::eventFilter(QObject *watched, QEvent *event)
 {
+    if (!m_nvim or !m_nvim->isReady())
+        return false;
+
     if (qobject_cast<TextEditor::TextEditorWidget *>(watched) ||
         qobject_cast<QPlainTextEdit *>(watched)) {
         if (event->type() == QEvent::Resize) {
