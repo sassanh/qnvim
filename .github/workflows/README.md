@@ -19,6 +19,11 @@ The value for `QT_CREATOR_VERSION` specifies the Qt Creator version to use for b
 The value for `QT_CREATOR_SNAPSHOT` can either be `NO` or `latest` or the build ID of a specific
 snapshot build for the Qt Creator version that you specified.
 
+The value for `NEOVIM_VERSION` specifies the Neovim release installed by the build job. Keep it
+at an explicit version (`vX.Y.Z`) rather than `stable`: on macOS, `stable` makes the setup action
+run `brew update` before installing Neovim, which can add roughly half an hour to the job. An
+explicit version downloads the official Neovim release tarball instead.
+
 You need to keep these values updated for different versions of your plugin, and take care
 that the Qt version and Qt Creator version you specify are compatible.
 

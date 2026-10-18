@@ -7,6 +7,10 @@ env:
   QT_VERSION: 6.8.3
   CMAKE_VERSION: 4.1.2
   NINJA_VERSION: 1.13.1
+  # Pinned on purpose: with the "stable" keyword, rhysd/action-setup-vim installs
+  # Neovim via `brew update && brew install neovim` on macOS, which can take
+  # 30 minutes. An explicit version downloads the official release tarball instead.
+  NEOVIM_VERSION: v0.12.6
 
 jobs:
   build:
@@ -67,7 +71,7 @@ jobs:
       uses: rhysd/action-setup-vim@v1
       with:
         neovim: true
-        version: stable
+        version: ${{ env.NEOVIM_VERSION }}
 
     - name: Setup MSVC environment
       uses: ilammy/msvc-dev-cmd@v1
