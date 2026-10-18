@@ -6,12 +6,41 @@
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/coreconstants.h>
+
+#include <texteditor/textdocument.h>
+#include <texteditor/texteditorconstants.h>
 
 #include <QAction>
 #include <QMenu>
 
 namespace QNVim {
 namespace Internal {
+
+namespace {
+
+// Qt Creator's own plain text editor widget (that one is internal to the
+// TextEditor plugin): marks the document as plain text.
+class PlainTextEditorWidget final : public TextEditor::TextEditorWidget {
+  public:
+    void finalizeInitialization() final {
+        textDocument()->setMimeType(QLatin1String(TextEditor::Constants::C_TEXTEDITOR_MIMETYPE_TEXT));
+    }
+};
+
+// TextEditorFactory leaves its document creator unset (only a default editor
+// widget creator is set up), and creating an editor with an unset document
+// creator calls an empty std::function (std::bad_function_call). Set up the
+// same document and widget creators that Qt Creator's own plain text editor
+// factory sets up.
+void setupPlainTextCreators(TextEditor::TextEditorFactory &factory) {
+    factory.setDocumentCreator(
+        [] { return new TextEditor::TextDocument(Core::Constants::K_DEFAULT_TEXT_EDITOR_ID); });
+    factory.setEditorWidgetCreator([] { return new PlainTextEditorWidget; });
+    factory.setUseGenericHighlighter(true);
+}
+
+} // namespace
 
 Utils::Result<> QNVimPlugin::initialize(const QStringList &arguments) {
     Q_UNUSED(arguments)
@@ -64,12 +93,16 @@ HelpEditorFactory::HelpEditorFactory() : TextEditorFactory() {
     setId("Help");
     setDisplayName("Help");
     addMimeType("text/plain");
+
+    setupPlainTextCreators(*this);
 }
 
 TerminalEditorFactory::TerminalEditorFactory() : TextEditorFactory() {
     setId("Terminal");
     setDisplayName("Terminal");
     addMimeType("text/plain");
+
+    setupPlainTextCreators(*this);
 }
 
 } // namespace Internal

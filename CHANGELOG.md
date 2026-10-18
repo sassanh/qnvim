@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file. This projec
 
 - Sync the editor viewport with Neovim's window: commands that scroll Neovim's window without moving the cursor (`zz`, `zt`, `zb`, `<C-e>`, `<C-y>`, `<C-d>`, `<C-u>`, `H`, `M`, `L`, ...) used to leave the Qt Creator editor view where it was, so they appeared to do nothing. The editor is now scrolled to Neovim's top line ([#15](https://github.com/sassanh/qnvim/issues/15)).
 
+- Help pages (`:help`) work and show their content: their editors used to crash Qt Creator (`std::bad_function_call`, the factory for them was missing its document creator) and the autocommand that was supposed to read the help files could never run, because qnvim's `BufReadCmd` autocommand suppresses Neovim's file reading. Help and terminal buffers now get proper plain text editors and the help files are read on Neovim's side.
+
 **Changed**
 
 - The Neovim command line now lives in the editor view, like Neovim's own command line, instead of in Qt Creator's status bar: it is easier to notice, longer commands fit and Neovim messages are shown in full and can be scrolled. This finishes the per-editor command line widget by Mikhail Zolotukhin from [#57](https://github.com/sassanh/qnvim/pull/57), which was present in the code but never wired up ([#56](https://github.com/sassanh/qnvim/issues/56)).
