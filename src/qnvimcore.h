@@ -104,6 +104,11 @@ class QNVimCore : public QObject {
     QPoint mCursor;
     QPoint mVCursor;
 
+    // Top line of Neovim's window viewport (1-based, 0 while unknown)
+    int mNvimTopline = 0;
+    // Top line Neovim scrolled to, to be applied to the editor viewport (0 when there is none)
+    int mPendingTopline = 0;
+
     int mSettingBufferFromVim = 0;
     unsigned long long mSyncCounter = 0;
 

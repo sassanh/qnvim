@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file. This projec
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.2...HEAD)
 
+**Fixed**
+
+- Sync the editor viewport with Neovim's window: commands that scroll Neovim's window without moving the cursor (`zz`, `zt`, `zb`, `<C-e>`, `<C-y>`, `<C-d>`, `<C-u>`, `H`, `M`, `L`, ...) used to leave the Qt Creator editor view where it was, so they appeared to do nothing. The editor is now scrolled to Neovim's top line ([#15](https://github.com/sassanh/qnvim/issues/15)).
+
 ## [20.0.2](https://github.com/sassanh/qnvim/tree/v20.0.2) (2026-10-18)
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.1...v20.0.2)

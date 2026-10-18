@@ -354,6 +354,9 @@ void QNVimCore::syncSelectionToVim(Core::IEditor *editor) {
 }
 
 void QNVimCore::syncCursorFromVim(const QVariantList &pos, const QVariantList &vPos, QByteArray mode) {
+    const int pendingTopline = mPendingTopline;
+    mPendingTopline = 0;
+
     auto editor = Core::EditorManager::currentEditor();
     if (!editor or !mBuffers.contains(editor))
         return;
@@ -372,6 +375,17 @@ void QNVimCore::syncCursorFromVim(const QVariantList &pos, const QVariantList &v
     mCursor.setX(col);
     mVCursor.setY(vLine);
     mVCursor.setX(vCol);
+
+    // Scroll the editor viewport so that the line at the top matches the top line of
+    // Neovim's window. This makes Neovim's viewport related commands (`zz`, `zt`, `zb`,
+    // `<C-e>`, `<C-y>`, ...) work.
+    if (textEditor and pendingTopline > 0 and
+        pendingTopline - 1 != textEditor->firstVisibleBlockNumber()) {
+        const QTextBlock block = textEditor->document()->findBlockByNumber(pendingTopline - 1);
+
+        if (block.isValid())
+            textEditor->setTopBlock(block);
+    }
 
     int anchor = QString("\n" + mText).section('\n', 0, vLine - 1).length() + vCol - 1;
     int position = QString("\n" + mText).section('\n', 0, line - 1).length() + col - 1;
@@ -498,7 +512,7 @@ void QNVimCore::syncFromVim() {
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
     unsigned long long syncCoutner = ++mSyncCounter;
 
-    auto request = mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap]");
+    auto request = mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0')]");
     connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
 
@@ -518,6 +532,15 @@ void QNVimCore::syncFromVim() {
         bool modified = state[3].toBool();
         QVariantList pos = state[4].toList().mid(1, 2);
         QVariantList vPos = state[5].toList().mid(1, 2);
+        int topline = state[9].toList().value(1).toInt();
+
+        // Neovim's window viewport may have been scrolled without the cursor having moved,
+        // e.g. by `zz`, `zt`, `zb`, `<C-e>` or `<C-y>`. Remember the new top line, so that
+        // the editor viewport can be scrolled to match once the cursor is synced.
+        if (topline > 0 and topline != mNvimTopline) {
+            mNvimTopline = topline;
+            mPendingTopline = topline;
+        }
 
         mNumber = state[6].toBool();
         mRelativeNumber = state[7].toBool();
