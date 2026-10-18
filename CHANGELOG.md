@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
-- Splits/windows support: Neovim's `:split`, `:vsplit` and any other window now show up as Qt Creator splits (each one keeps its own file, cursor and viewport), and Qt Creator's own splits become Neovim windows. Closing a Neovim window removes its Qt Creator split; closing a split (or closing the last editor in it) closes its Neovim window ([#3](https://github.com/sassanh/qnvim/issues/3)). Known limitations: a new split is always created below or to the right of the split it was made from, split sizes are not synced between the two, unnamed/scratch buffers get no editor, and Neovim tabpages are shown as splits in the same editor area.
+- Splits/windows support: Neovim's `:split`, `:vsplit` and any other window now show up as Qt Creator splits in the same arrangement as in Neovim (each one keeps its own file, cursor and viewport), and Qt Creator's own splits become Neovim windows. Closing a Neovim window removes its Qt Creator split; closing a split (or closing the last editor in it) closes its Neovim window ([#3](https://github.com/sassanh/qnvim/issues/3)). Known limitations: split sizes are not synced between the two, unnamed/scratch buffers get no editor, and Neovim tabpages are shown as splits in the same editor area.
 
 **Fixed**
 

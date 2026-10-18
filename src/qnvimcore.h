@@ -127,8 +127,10 @@ class QNVimCore : public QObject {
     void ensureWindowForView(Core::IEditor *);
     // Neovim -> Qt Creator: create a split for a window, showing its buffer.
     // The window is split off from `sourceWin` (0 for "whatever is current").
+    // `sideBySide` is the orientation of the split, `before` tells whether the
+    // window is placed left of / above its source window.
     void createViewForWindow(int win, int buffer, const QString &filename, int sourceWin,
-                             bool sideBySide);
+                             bool sideBySide, bool before);
     // Neovim -> Qt Creator: open an editor for a buffer in the current view.
     Core::IEditor *openEditorForBuffer(int, const QString &, const QString &, bool);
     // Neovim -> Qt Creator: close the split of a window Neovim closed.

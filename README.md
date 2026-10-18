@@ -14,7 +14,7 @@ With qnvim, you can run your `init.lua`/`init.vim`, all your Neovim plugins, and
 
 qnvim is under development, but it's mostly stable and usable. Currently, there are some known issues:
 
-- Splits (Neovim windows) are supported, with some rough edges: Neovim's `:split`/`:vsplit` always show up as a split below or to the right in Qt Creator (Qt Creator's own splits get Neovim windows that match their layout), split sizes are not synced between the two, and Neovim tabpages are all shown as splits in the same editor area.
+- Splits (Neovim windows) are supported, with some rough edges: Neovim's `:split`/`:vsplit` show up as splits on the side they are on in Neovim (Qt Creator's own splits get Neovim windows that match their layout), split sizes are not synced between the two, and Neovim tabpages are all shown as splits in the same editor area.
 - It should use vim highlights for buffers that Qt Creator doesn't support (like Vim helpfiles and many others)
 
 Most Neovim plugins should work fine, except for a few that rely on highlights or special buffers. Qt Creator already provides excellent highlighting for C++ and QML, so that's not a problem. Work is in progress to handle all types of buffers.

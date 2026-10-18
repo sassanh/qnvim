@@ -101,7 +101,7 @@ QNVimCore::QNVimCore(QObject *parent)
     });
 
     connect(mNVim, &NeovimQt::NeovimConnector::ready, this, [=, this]() {
-        mNVim->api2()->nvim_command(QStringLiteral("\
+        const QByteArray setupCommand = QStringLiteral("\
 let g:QNVIM_always_text=v:true\n\
 let g:neovim_channel=%1\n\
 execute \"command -bar Build call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
@@ -145,21 +145,26 @@ function! QNVimWinEvent(event, win, buffer)\n\
     endif\n\
     call rpcnotify(%1, 'Gui', 'winAutoCommand', a:event, a:win, a:buffer)\n\
 endfunction\n\
-autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), winbufnr(win_getid()))\n\
-autocmd WinEnter * call QNVimWinEvent('WinEnter', win_getid(), winbufnr(win_getid()))\n\
-autocmd WinClosed * call QNVimWinEvent('WinClosed', str2nr(expand('<amatch>')), 0)\n\
+execute \"autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), winbufnr(win_getid()))\"\n\
+execute \"autocmd WinEnter * call QNVimWinEvent('WinEnter', win_getid(), winbufnr(win_getid()))\"\n\
+execute \"autocmd WinClosed * call QNVimWinEvent('WinClosed', str2nr(expand('<amatch>')), 0)\"\n\
 function! QNVimWindowInfo()\n\
     let l:windows = []\n\
     for l:info in getwininfo()\n\
         if win_gettype(l:info.winid) ==# ''\n\
             let l:name = bufname(l:info.bufnr)\n\
-            call add(l:windows, [l:info.winid, l:info.bufnr, empty(l:name) ? '' : fnamemodify(l:name, ':p'), l:info.winrow, l:info.wincol, l:info.tabnr, l:info.winid ==# win_getid()])\n\
+            call add(l:windows, [l:info.winid, l:info.bufnr, empty(l:name) ? '' : fnamemodify(l:name, ':p'), l:info.winrow, l:info.wincol, l:info.width, l:info.height, l:info.tabnr, l:info.winid ==# win_getid()])\n\
         endif\n\
     endfor\n\
     return l:windows\n\
 endfunction\n\
 autocmd VimEnter * let $MYQVIMRC=substitute(substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 'g'), 'init.lua$', 'qnvim.vim', 'g') | source $MYQVIMRC")
-                                                      .arg(mNVim->channel()).toUtf8());
+                                                      .arg(mNVim->channel()).toUtf8();
+        auto setupRequest = mNVim->api2()->nvim_command(setupCommand);
+        connect(setupRequest, &NeovimQt::MsgpackRequest::error, this,
+                [](quint32, quint64, const QVariant &error) {
+            qWarning(Main) << "Could not set up Neovim:" << error;
+        });
         connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
                 this, &QNVimCore::handleNotification);
 
@@ -260,6 +265,9 @@ void QNVimCore::fixSize(Core::IEditor *editor) {
         return;
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
     QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
 
     // -1 is for the visual white spaces that Qt Creator adds (whether it renders them or not)
@@ -524,7 +532,7 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor) {
 }
 
 void QNVimCore::createViewForWindow(int win, int buffer, const QString &filename, int sourceWin,
-                                    bool sideBySide) {
+                                    bool sideBySide, bool before) {
     if (!mNVim or !mNVim->isReady())
         return;
 
@@ -537,23 +545,47 @@ void QNVimCore::createViewForWindow(int win, int buffer, const QString &filename
     mInhibitWindowSync = true;
 
     // The window was split off the source window: create the view next to the
-    // view of the source window.
-    if (sourceWin)
+    // view of the source window. Qt Creator creates the new view after (right
+    // of / below) the view it splits, so a window that Neovim placed before
+    // (left of / above) its source window is given the source view instead
+    // (see below).
+    Core::IEditor *sourceEditor = nullptr;
+    if (sourceWin) {
         activateWindowEditor(sourceWin);
+        if (mWindows.contains(sourceWin))
+            sourceEditor = mWindows[sourceWin].editor;
+    }
 
     if (sideBySide)
         Core::EditorManager::splitSideBySide();
     else
         Core::EditorManager::split();
 
-    Core::IEditor *editor = openEditorForBuffer(buffer, filename, mBufferType.value(buffer),
-                                                mAlwaysText);
+    // The split duplicated the editor of the source window into the new view.
+    // That duplicate is the editor of the new window as long as it shows its
+    // buffer. Opening the buffer instead would activate an editor from another
+    // view, and Qt Creator moves such an editor into the new view (it only
+    // duplicates an editor that is visible where it is).
+    Core::IEditor *editor = Core::EditorManager::currentEditor();
+    const bool duplicated = editor and bufferForEditor(editor) == buffer;
+    if (!duplicated)
+        editor = openEditorForBuffer(buffer, filename, mBufferType.value(buffer), mAlwaysText);
 
     mInhibitWindowSync = inhibited;
     mCreatingViewForWindow = 0;
 
-    if (editor and mWindows.contains(win) and !mWindows[win].bound)
+    if (before and duplicated and sourceWin and sourceEditor and editor
+        and mWindows.contains(sourceWin)) {
+        // Neovim placed the new window before the source window, but Qt
+        // Creator only splits after it: the two views are the right pair, so
+        // the windows are swapped between them.
+        bindWindow(win, sourceEditor);
+        bindWindow(sourceWin, editor);
+        // Neovim works in the new window; show its (left/top) view.
+        activateWindowEditor(win);
+    } else if (editor and mWindows.contains(win) and !mWindows[win].bound) {
         bindWindow(win, editor);
+    }
 
     // If no editor could be created for the buffer (e.g. no editor factory
     // accepts the file), the window stays without a view; it is paired with
@@ -730,13 +762,15 @@ void QNVimCore::reconcileWindows() {
             QString filename;
             int row = 0;
             int col = 0;
+            int width = 0;
+            int height = 0;
             int tab = 0;
         };
         QList<WindowInfo> windows;
 
         for (const QVariant &entry : result.toList()) {
             const QVariantList info = entry.toList();
-            if (info.size() < 7)
+            if (info.size() < 9)
                 continue;
 
             WindowInfo window;
@@ -745,11 +779,13 @@ void QNVimCore::reconcileWindows() {
             window.filename = info[2].toString();
             window.row = info[3].toInt();
             window.col = info[4].toInt();
-            window.tab = info[5].toInt();
+            window.width = info[5].toInt();
+            window.height = info[6].toInt();
+            window.tab = info[7].toInt();
             if (!window.win)
                 continue;
 
-            if (info[6].toBool())
+            if (info[8].toBool())
                 mCurrentWindow = window.win;
             if (!mWindows.contains(window.win))
                 mWindows[window.win].buffer = window.buffer; // e.g. Neovim's first window
@@ -777,27 +813,65 @@ void QNVimCore::reconcileWindows() {
 
             if (mEditors.contains(window.buffer) or !window.filename.isEmpty()) {
                 // The view is created next to the view of the window Neovim
-                // split this one off: that window shares a row or a column
-                // with it in the same tab.
+                // split this one off: the window the new one is adjacent to in
+                // the layout. The new window can be before the window it was
+                // split from (left of / above it) as well, e.g. with
+                // 'splitright' or 'splitbelow'.
                 int sourceWin = 0;
                 bool sideBySide = false;
+                bool before = false;
+                int bestDistance = -1;
                 for (const WindowInfo &source : windows) {
                     if (source.win == window.win or source.tab != window.tab)
-                        continue;
-                    if (source.row != window.row and source.col != window.col)
                         continue;
                     auto sourceIt = mWindows.find(source.win);
                     if (sourceIt == mWindows.end() or !sourceIt.value().bound)
                         continue;
 
-                    sourceWin = source.win;
-                    sideBySide = (source.row == window.row);
-                    if (source.win == mCurrentWindow)
-                        break;
+                    bool candidateSideBySide = false;
+                    bool candidateBefore = false;
+                    int distance = -1;
+                    if (source.row == window.row and source.height == window.height) {
+                        candidateSideBySide = true;
+                        if (source.col + source.width <= window.col) {
+                            // The source is left of the new window.
+                            candidateBefore = false;
+                            distance = window.col - (source.col + source.width);
+                        } else if (window.col + window.width <= source.col) {
+                            // The source is right of the new window.
+                            candidateBefore = true;
+                            distance = source.col - (window.col + window.width);
+                        } else {
+                            continue; // they overlap: not next to each other
+                        }
+                    } else if (source.col == window.col
+                               and source.width == window.width) {
+                        candidateSideBySide = false;
+                        if (source.row + source.height <= window.row) {
+                            // The source is above the new window.
+                            candidateBefore = false;
+                            distance = window.row - (source.row + source.height);
+                        } else if (window.row + window.height <= source.row) {
+                            // The source is below the new window.
+                            candidateBefore = true;
+                            distance = source.row - (window.row + window.height);
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+
+                    if (bestDistance < 0 or distance < bestDistance) {
+                        bestDistance = distance;
+                        sourceWin = source.win;
+                        sideBySide = candidateSideBySide;
+                        before = candidateBefore;
+                    }
                 }
 
                 createViewForWindow(window.win, window.buffer, window.filename, sourceWin,
-                                    sideBySide);
+                                    sideBySide, before);
             } else {
                 // No editor and no file name: there is nothing to show in
                 // Qt Creator yet; the window is handled once it has a buffer
@@ -1386,7 +1460,9 @@ bool QNVimCore::eventFilter(QObject *object, QEvent *event) {
         qobject_cast<QPlainTextEdit *>(object) ||
         qobject_cast<Utils::PlainTextEdit *>(object)) {
         if (event->type() == QEvent::Resize) {
-            QTimer::singleShot(100, this, [=, this]() { fixSize(); });
+            QTimer::singleShot(100, this, [=, this]() {
+                fixSize(Core::EditorManager::currentEditor());
+            });
             return false;
         }
     }
@@ -1482,13 +1558,23 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
                         qWarning(Main) << "Could not open file in Neovim:" << err;
                     });
             connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
-                auto request = mNVim->api2()->nvim_eval(QStringLiteral("bufnr('')").toUtf8());
+                // Ask for the buffer of the file instead of the current buffer:
+                // several editors may be opened at the same time, and another
+                // file may be the current one by the time this answer arrives
+                // (bufnr('') would return the buffer of that other file).
+                auto request = mNVim->api2()->nvim_call_function(
+                    QByteArrayLiteral("bufnr"), {filename});
                 connect(request, &NeovimQt::MsgpackRequest::finished, this,
                         [=, this](quint32, quint64, const QVariant &v) {
-                    mBuffers[editor] = v.toInt();
-                    mEditors[v.toInt()] = editor;
-                    mPendingPush.insert(v.toInt());
-                    initializeBuffer(v.toInt());
+                    const int buffer = v.toInt();
+                    if (buffer <= 0) {
+                        qWarning(Main) << "Could not find the buffer of" << filename;
+                        return;
+                    }
+                    mBuffers[editor] = buffer;
+                    mEditors[buffer] = editor;
+                    mPendingPush.insert(buffer);
+                    initializeBuffer(buffer);
                     attachEditorToWindow(editor);
                 });
             });
@@ -1506,7 +1592,14 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     if (bufferToInitialize)
         initializeBuffer(bufferToInitialize);
 
-    QTimer::singleShot(100, this, [=, this]() { fixSize(editor); });
+    // The editor may be closed again before the timer fires (e.g. an editor a
+    // split was created for is replaced right away), so only run for an editor
+    // that is still there.
+    const QPointer<Core::IEditor> editorGuard(editor);
+    QTimer::singleShot(100, this, [this, editorGuard]() {
+        if (editorGuard)
+            fixSize(editorGuard);
+    });
 }
 
 void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
