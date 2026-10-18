@@ -40,14 +40,36 @@
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QScrollBar>
+#include <QSplitter>
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QTextBlock>
 #include <QTextEdit>
 #include <QThread>
+#include <QTimer>
 
 namespace QNVim {
 namespace Internal {
+
+namespace {
+
+// The editor that is current in an editor view of Qt Creator's editor area
+// (each view shows one editor at a time).
+Core::IEditor *editorForView(QWidget *view) {
+    if (!view)
+        return nullptr;
+
+    for (auto editor : Core::EditorManager::visibleEditors()) {
+        QWidget *editorWidget = editor ? editor->widget() : nullptr;
+        QWidget *stack = editorWidget ? editorWidget->parentWidget() : nullptr;
+        if (stack and stack->parentWidget() == view)
+            return editor;
+    }
+
+    return nullptr;
+}
+
+} // namespace
 
 QNVimCore::QNVimCore(QObject *parent)
     : QObject{parent} {
@@ -105,7 +127,7 @@ execute \"autocmd BufReadCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'Bu
 execute \"autocmd BufReadCmd * if &buftype ==# 'help' | setlocal modifiable | silent! call setline(1, readfile(expand('<afile>:p'))) | setlocal nomodifiable nomodified | endif\"\n\
 execute \"autocmd TermOpen * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'TermOpen', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
 execute \"autocmd BufWriteCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)|set nomodified\"\n\
-execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
+execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text, win_gettype() ==# '' ? win_getid() : 0)\"\n\
 execute \"autocmd BufDelete * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
 execute \"autocmd BufHidden * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufHidden', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
 execute \"autocmd BufWipeout * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
@@ -116,6 +138,25 @@ function! SetCursor(line, col)\n\
         normal! i\x07u\x03\n\
     endif\n\
     call cursor(a:line, a:col)\n\
+endfunction\n\
+function! QNVimWinEvent(event, win, buffer)\n\
+    if win_gettype(a:win) !=# ''\n\
+        return\n\
+    endif\n\
+    call rpcnotify(%1, 'Gui', 'winAutoCommand', a:event, a:win, a:buffer)\n\
+endfunction\n\
+autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), winbufnr(win_getid()))\n\
+autocmd WinEnter * call QNVimWinEvent('WinEnter', win_getid(), winbufnr(win_getid()))\n\
+autocmd WinClosed * call QNVimWinEvent('WinClosed', str2nr(expand('<amatch>')), 0)\n\
+function! QNVimWindowInfo()\n\
+    let l:windows = []\n\
+    for l:info in getwininfo()\n\
+        if win_gettype(l:info.winid) ==# ''\n\
+            let l:name = bufname(l:info.bufnr)\n\
+            call add(l:windows, [l:info.winid, l:info.bufnr, empty(l:name) ? '' : fnamemodify(l:name, ':p'), l:info.winrow, l:info.wincol, l:info.tabnr, l:info.winid ==# win_getid()])\n\
+        endif\n\
+    endfor\n\
+    return l:windows\n\
 endfunction\n\
 autocmd VimEnter * let $MYQVIMRC=substitute(substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 'g'), 'init.lua$', 'qnvim.vim', 'g') | source $MYQVIMRC")
                                                       .arg(mNVim->channel()).toUtf8());
@@ -230,14 +271,641 @@ void QNVimCore::fixSize(Core::IEditor *editor) {
         mNVim->api6()->nvim_ui_try_resize_grid(1, width, height);
 }
 
+int QNVimCore::bufferForEditor(Core::IEditor *editor) const {
+    if (!editor)
+        return 0;
+
+    if (mBuffers.contains(editor))
+        return mBuffers[editor];
+
+    // Another editor may show the same document (a Qt Creator split shows its
+    // own editor for the document); a document has a single Neovim buffer.
+    Core::IDocument *document = editor->document();
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        Core::IEditor *other = it.key();
+        if (other and other != editor and other->document() == document)
+            return it.value();
+    }
+
+    return 0;
+}
+
+QWidget *QNVimCore::editorViewWidget(Core::IEditor *editor) const {
+    QWidget *widget = editor ? editor->widget() : nullptr;
+    QWidget *stack = widget ? widget->parentWidget() : nullptr;
+    return stack ? stack->parentWidget() : nullptr;
+}
+
+int QNVimCore::windowForView(QWidget *view) const {
+    if (!view)
+        return 0;
+
+    for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
+        if (it.value().view == view)
+            return it.key();
+    }
+
+    return 0;
+}
+
+int QNVimCore::windowForEditor(Core::IEditor *editor) const {
+    return windowForView(editorViewWidget(editor));
+}
+
+int QNVimCore::windowWithoutView(int buffer) const {
+    if (!buffer)
+        return 0;
+
+    for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
+        const WindowState &st = it.value();
+        if (!st.bound and st.buffer == buffer)
+            return it.key();
+    }
+
+    return 0;
+}
+
+Core::IEditor *QNVimCore::editorWithoutWindow(int buffer) const {
+    if (!buffer)
+        return nullptr;
+
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        Core::IEditor *editor = it.key();
+        if (it.value() != buffer or !editor)
+            continue;
+
+        QWidget *view = editorViewWidget(editor);
+        if (view and !windowForView(view))
+            return editor;
+    }
+
+    return nullptr;
+}
+
+void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
+    if (!win or !editor)
+        return;
+
+    WindowState &st = mWindows[win];
+    st.bound = true;
+    st.editor = editor;
+    st.view = editorViewWidget(editor);
+    if (const int buffer = bufferForEditor(editor))
+        st.buffer = buffer;
+    st.cursorLine = st.cursorCol = st.vCursorLine = st.vCursorCol = 0;
+    st.topline = st.pendingTopline = 0;
+    mNewWindows.remove(win);
+}
+
+void QNVimCore::activateWindowEditor(int win) {
+    auto it = mWindows.find(win);
+    if (it == mWindows.end())
+        return;
+
+    WindowState &st = *it;
+    Core::IEditor *editor = st.editor;
+    if (!editor or editorViewWidget(editor) != st.view) {
+        // The view may show another editor now (the stored one was closed, or
+        // moved to another view, as Qt Creator does when a split is removed);
+        // the window represents the editor its view shows.
+        editor = editorForView(st.view);
+        st.editor = editor;
+    }
+
+    if (!editor or Core::EditorManager::currentEditor() == editor)
+        return;
+
+    Core::EditorManager::activateEditor(editor);
+}
+
+void QNVimCore::syncWindow(int win, Core::IEditor *editor) {
+    auto it = mWindows.find(win);
+    if (it == mWindows.end() or !editor)
+        return;
+
+    const int buffer = bufferForEditor(editor);
+    if (!buffer)
+        return;
+
+    WindowState &st = *it;
+    const bool bufferChanged = (st.buffer != buffer);
+    st.editor = editor;
+    st.view = editorViewWidget(editor);
+    st.buffer = buffer;
+
+    if (bufferChanged) {
+        // The window shows another buffer now; nothing was synced for it yet.
+        st.cursorLine = st.cursorCol = st.vCursorLine = st.vCursorCol = 0;
+        st.topline = st.pendingTopline = 0;
+    }
+
+    if (!mNVim or !mNVim->isReady() or mInhibitWindowSync)
+        return;
+
+    if (bufferChanged)
+        mNVim->api5()->nvim_win_set_buf(win, buffer);
+
+    const bool currentChanged = (win != mCurrentWindow);
+    if (currentChanged) {
+        mCurrentWindow = win;
+        mNVim->api2()->nvim_set_current_win(win);
+    }
+
+    if (bufferChanged or currentChanged)
+        syncCursorToVim(editor);
+}
+
+void QNVimCore::updateWindowBuffer(int win, int buffer, const QString &filename,
+                                   const QString &bufferType, bool alwaysText) {
+    auto it = mWindows.find(win);
+    if (it == mWindows.end())
+        return;
+
+    WindowState &st = *it;
+    st.buffer = buffer;
+    st.cursorLine = st.cursorCol = st.vCursorLine = st.vCursorCol = 0;
+    st.topline = st.pendingTopline = 0;
+    // The buffer was entered in this window: unless a command moved the
+    // window, this is the window Neovim works in now (`:e` does not fire
+    // WinEnter).
+    mCurrentWindow = win;
+
+    // The view of the window may already show the buffer: `e filename` in
+    // editorOpened() opened the file in Neovim, and this is its BufEnter.
+    Core::IEditor *shown = editorForView(st.view);
+    if (shown and !filename.isEmpty() and filename == this->filename(shown)) {
+        st.editor = shown;
+        return;
+    }
+
+    const bool inhibited = mInhibitWindowSync;
+    mInhibitWindowSync = true;
+    // The window's view is where the buffer has to be shown.
+    activateWindowEditor(win);
+    Core::IEditor *editor = openEditorForBuffer(buffer, filename, bufferType, alwaysText);
+    mInhibitWindowSync = inhibited;
+
+    if (editor)
+        syncWindow(win, editor);
+}
+
+void QNVimCore::ensureWindowForView(Core::IEditor *editor) {
+    if (!mNVim or !mNVim->isReady() or mInhibitWindowSync)
+        return;
+
+    if (!editor)
+        return;
+
+    QWidget *view = editorViewWidget(editor);
+    if (!view or windowForView(view))
+        return;
+
+    if (mCreatingWindowForView == view)
+        return; // the window is already being created for this view
+
+    const int buffer = bufferForEditor(editor);
+    if (!buffer) {
+        // The buffer is not known yet (the editor is still being opened in
+        // Neovim); its window is created once it is (see reconcileWindows()).
+        mWindowsDirty = true;
+        return;
+    }
+
+    mCreatingWindowForView = view;
+
+    // The orientation of the nearest splitter says where the view is in Qt
+    // Creator: a view side by side with the others gets a window next to the
+    // current one, a stacked view one below it.
+    QByteArray split = "below";
+    for (QWidget *widget = view; widget; widget = widget->parentWidget()) {
+        if (auto splitter = qobject_cast<QSplitter *>(widget)) {
+            if (splitter->orientation() == Qt::Horizontal)
+                split = "right";
+            break;
+        }
+    }
+
+    QVariantMap config;
+    config.insert("split", split);
+    if (mCurrentWindow)
+        config.insert("win", mCurrentWindow);
+
+    auto request = mNVim->api6()->nvim_open_win(buffer, true, config);
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [=, this](quint32, quint64, const QVariant &result) {
+        mCreatingWindowForView = nullptr;
+
+        const int win = result.toInt();
+        if (!win)
+            return;
+
+        auto it = mWindows.find(win);
+        if (it != mWindows.end() and it.value().bound)
+            return; // paired with a view already (e.g. by reconcileWindows())
+
+        // The editor the view shows now is the one the window represents; the
+        // editor the window was created for may be gone by now.
+        Core::IEditor *windowEditor = editorForView(view);
+        if (!windowEditor and mBuffers.contains(editor))
+            windowEditor = editor;
+        if (!windowEditor) {
+            mWindowsDirty = true;
+            return;
+        }
+
+        bindWindow(win, windowEditor);
+        syncCursorToVim(windowEditor);
+    });
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [=, this](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not open a window in Neovim:" << error;
+        mCreatingWindowForView = nullptr;
+    });
+}
+
+void QNVimCore::createViewForWindow(int win, int buffer, const QString &filename, int sourceWin,
+                                    bool sideBySide) {
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    auto it = mWindows.find(win);
+    if (it == mWindows.end() or it.value().bound)
+        return;
+
+    mCreatingViewForWindow = win;
+    const bool inhibited = mInhibitWindowSync;
+    mInhibitWindowSync = true;
+
+    // The window was split off the source window: create the view next to the
+    // view of the source window.
+    if (sourceWin)
+        activateWindowEditor(sourceWin);
+
+    if (sideBySide)
+        Core::EditorManager::splitSideBySide();
+    else
+        Core::EditorManager::split();
+
+    Core::IEditor *editor = openEditorForBuffer(buffer, filename, mBufferType.value(buffer),
+                                                mAlwaysText);
+
+    mInhibitWindowSync = inhibited;
+    mCreatingViewForWindow = 0;
+
+    if (editor and mWindows.contains(win) and !mWindows[win].bound)
+        bindWindow(win, editor);
+
+    // If no editor could be created for the buffer (e.g. no editor factory
+    // accepts the file), the window stays without a view; it is paired with
+    // one once an editor that shows its buffer is opened. Retrying the view
+    // creation would only add empty splits.
+    mNewWindows.remove(win);
+}
+
+Core::IEditor *QNVimCore::openEditorForBuffer(int buffer, const QString &filename,
+                                              const QString &bufferType, bool alwaysText) {
+    Core::IEditor *editor = mEditors.value(buffer);
+    if (editor) {
+        // An editor for the buffer exists (in some view): show it in the view
+        // the user is working in (Qt Creator duplicates it there if it can).
+        Core::EditorManager::activateEditorForDocument(editor->document());
+        Core::IEditor *current = Core::EditorManager::currentEditor();
+        if (current and current->document() == editor->document())
+            return current;
+        return editor;
+    }
+
+    if (filename.isEmpty())
+        return nullptr;
+
+    // The editor is created from a Neovim autocommand: tell editorOpened()
+    // which buffer it is for, so that the content comes from Qt Creator
+    // instead of Neovim reading the file.
+    const int settingBufferFromVim = mSettingBufferFromVim;
+    mSettingBufferFromVim = buffer;
+
+    Core::IEditor *opened = nullptr;
+    if (bufferType.isEmpty() and QFile::exists(filename)) {
+        QFileInfo fileInfo = QFileInfo(filename);
+        if (alwaysText) {
+            if ((QStringList() << "js"
+                               << "qml"
+                               << "cpp"
+                               << "c"
+                               << "cc"
+                               << "hpp"
+                               << "h"
+                               << "pro")
+                    .contains(fileInfo.suffix(), Qt::CaseInsensitive))
+                opened = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
+            else
+                opened = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename),
+                                                         "Core.PlainTextEditor");
+        } else {
+            opened = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
+        }
+    } else if (bufferType == "help") {
+        QString title = filename;
+        opened = Core::EditorManager::openEditorWithContents("Help", &title, QByteArray(), filename);
+        if (opened) {
+            opened->document()->setFilePath(Utils::FilePath::fromString(filename));
+            opened->document()->setPreferredDisplayName(filename);
+        }
+    } else {
+        QString title = filename;
+        opened = Core::EditorManager::openEditorWithContents("Terminal", &title, QByteArray(),
+                                                             filename);
+    }
+
+    mSettingBufferFromVim = settingBufferFromVim;
+    return opened;
+}
+
+void QNVimCore::closeWindowForView(int win) {
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    if (!mWindows.contains(win))
+        return;
+
+    // Neovim is told to close the window; no Qt Creator split must be removed
+    // when Neovim reports it closed.
+    mClosingWindows.insert(win);
+    mNewWindows.remove(win);
+
+    auto request = mNVim->api6()->nvim_win_close(win, true);
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [=, this](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not close a window in Neovim:" << error;
+        mClosingWindows.remove(win);
+        auto it = mWindows.find(win);
+        if (it == mWindows.end())
+            return; // the window is gone (WinClosed() already took care of it)
+
+        // The window still exists (Neovim cannot close its last one): it no
+        // longer represents the view the close was requested for, but it may
+        // be paired with a view again.
+        it.value().bound = false;
+        it.value().editor = nullptr;
+        it.value().view = nullptr;
+    });
+}
+
+void QNVimCore::setupEditor(Core::IEditor *editor) {
+    auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
+    Core::IDocument *document = editor->document();
+
+    connect(document, &Core::IDocument::contentsChanged, this, [=, this]() {
+            auto buffer = mBuffers.value(editor);
+            QString bufferType = mBufferType[buffer];
+            if (!mEditors.contains(buffer) or (bufferType != "acwrite" and !bufferType.isEmpty()))
+                return;
+            syncToVim(editor);
+        },
+        Qt::QueuedConnection);
+    connect(textEditor, &TextEditor::TextEditorWidget::cursorPositionChanged, this, [=, this]() {
+            if (Core::EditorManager::currentEditor() != editor)
+                return;
+            // Cursor movements while the editor content is not in sync with
+            // Neovim (e.g. a locally changed document is still being pushed)
+            // must not be sent.
+            if (mBuffers.value(editor) != mTextBuffer)
+                return;
+            syncCursorToVim(editor);
+        },
+        Qt::QueuedConnection);
+    connect(textEditor, &TextEditor::TextEditorWidget::selectionChanged, this, [=, this]() {
+            if (Core::EditorManager::currentEditor() != editor)
+                return;
+            if (mBuffers.value(editor) != mTextBuffer)
+                return;
+            syncSelectionToVim(editor);
+        },
+        Qt::QueuedConnection);
+    connect(textEditor->textDocument(), &TextEditor::TextDocument::fontSettingsChanged,
+            this, &QNVimCore::updateCursorSize);
+}
+
+void QNVimCore::closeWindowsForRemovedViews() {
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    // A window whose editor view is gone (the user removed the split in
+    // Qt Creator) has no counterpart anymore. Neovim cannot close its last
+    // window, so the last one is left alone.
+    if (mWindows.size() <= 1)
+        return;
+
+    for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
+        const WindowState &st = it.value();
+        if (!st.bound or st.view or mClosingWindows.contains(it.key()))
+            continue;
+
+        closeWindowForView(it.key());
+    }
+}
+
+void QNVimCore::reconcileWindows() {
+    if (!mWindowsDirty or !mNVim or !mNVim->isReady())
+        return;
+
+    // Do not ask again while the request is in flight; if it fails, the
+    // windows are reconciled on the next redraw flush.
+    mWindowsDirty = false;
+
+    auto request = mNVim->api2()->nvim_call_function(QByteArrayLiteral("QNVimWindowInfo"), {});
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [this](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not read the windows from Neovim:" << error;
+        mWindowsDirty = true;
+    });
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [=, this](quint32, quint64, const QVariant &result) {
+        struct WindowInfo {
+            int win = 0;
+            int buffer = 0;
+            QString filename;
+            int row = 0;
+            int col = 0;
+            int tab = 0;
+        };
+        QList<WindowInfo> windows;
+
+        for (const QVariant &entry : result.toList()) {
+            const QVariantList info = entry.toList();
+            if (info.size() < 7)
+                continue;
+
+            WindowInfo window;
+            window.win = info[0].toInt();
+            window.buffer = info[1].toInt();
+            window.filename = info[2].toString();
+            window.row = info[3].toInt();
+            window.col = info[4].toInt();
+            window.tab = info[5].toInt();
+            if (!window.win)
+                continue;
+
+            if (info[6].toBool())
+                mCurrentWindow = window.win;
+            if (!mWindows.contains(window.win))
+                mWindows[window.win].buffer = window.buffer; // e.g. Neovim's first window
+
+            windows.append(window);
+        }
+
+        // Windows Neovim created that are still nothing but windows now that
+        // the command that created them was fully processed are splits: each
+        // one needs an editor view in Qt Creator.
+        QSet<int> newWindows;
+        for (const WindowInfo &window : windows) {
+            if (!mNewWindows.contains(window.win))
+                continue;
+
+            auto it = mWindows.find(window.win);
+            if (it == mWindows.end() or it.value().bound)
+                continue;
+
+            if (Core::IEditor *editor = editorWithoutWindow(window.buffer)) {
+                // An editor for the buffer has no view yet: pair them.
+                bindWindow(window.win, editor);
+                continue;
+            }
+
+            if (mEditors.contains(window.buffer) or !window.filename.isEmpty()) {
+                // The view is created next to the view of the window Neovim
+                // split this one off: that window shares a row or a column
+                // with it in the same tab.
+                int sourceWin = 0;
+                bool sideBySide = false;
+                for (const WindowInfo &source : windows) {
+                    if (source.win == window.win or source.tab != window.tab)
+                        continue;
+                    if (source.row != window.row and source.col != window.col)
+                        continue;
+                    auto sourceIt = mWindows.find(source.win);
+                    if (sourceIt == mWindows.end() or !sourceIt.value().bound)
+                        continue;
+
+                    sourceWin = source.win;
+                    sideBySide = (source.row == window.row);
+                    if (source.win == mCurrentWindow)
+                        break;
+                }
+
+                createViewForWindow(window.win, window.buffer, window.filename, sourceWin,
+                                    sideBySide);
+            } else {
+                // No editor and no file name: there is nothing to show in
+                // Qt Creator yet; the window is handled once it has a buffer
+                // with a file name.
+                newWindows.insert(window.win);
+            }
+        }
+
+        mNewWindows = newWindows;
+    });
+}
+
+void QNVimCore::attachEditorToWindow(Core::IEditor *editor) {
+    if (!editor)
+        return;
+
+    const QPointer<QWidget> view = editorViewWidget(editor);
+
+    // The editor's view may already represent a window: it shows the editor
+    // now.
+    if (const int win = windowForView(view)) {
+        syncWindow(win, editor);
+        return;
+    }
+
+    if (mRemovingView)
+        return; // the view of the editor is being removed
+
+    if (mCreatingViewForWindow) {
+        // Qt Creator is being made to show a view for the window (the split
+        // duplicated the source view's editor): the editor that is meant for
+        // that window is the one showing its buffer. The others get a window
+        // the regular way, should they ever become current.
+        auto it = mWindows.find(mCreatingViewForWindow);
+        if (it != mWindows.end() and !it.value().bound
+            and bufferForEditor(editor) == it.value().buffer)
+            bindWindow(mCreatingViewForWindow, editor);
+        return;
+    }
+
+    const int buffer = bufferForEditor(editor);
+    if (!buffer) {
+        // The buffer is not known yet (the editor is still being opened in
+        // Neovim); the editor and its window are paired once it is (the next
+        // time the windows are reconciled).
+        mWindowsDirty = true;
+        return;
+    }
+
+    // A window that Neovim created for the buffer has no view yet.
+    if (const int win = windowWithoutView(buffer)) {
+        bindWindow(win, editor);
+        return;
+    }
+
+    if (mCreatingWindowForView == view)
+        return; // the window is already being created for this view
+
+    if (!mNVim or !mNVim->isReady())
+        return; // the window is paired once the connection is ready again
+
+    // The buffer may be shown in Neovim's current window already (e.g. the
+    // window Neovim had before qnvim could see it): the editor takes it over.
+    auto request = mNVim->api2()->nvim_eval(
+        QByteArrayLiteral("[win_getid(), bufnr(''), win_gettype()]"));
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [=, this](quint32, quint64, const QVariant &result) {
+        const QVariantList state = result.toList();
+        const int win = state.value(0).toInt();
+        const int windowBuffer = state.value(1).toInt();
+        const QByteArray windowType = state.value(2).toByteArray();
+
+        if (const int bound = windowForView(view)) {
+            syncWindow(bound, editor); // the view has a window by now
+            return;
+        }
+
+        const int buffer = bufferForEditor(editor);
+        if (!buffer)
+            return;
+
+        auto it = mWindows.find(win);
+        if (win and windowType.isEmpty() and windowBuffer == buffer
+            and (it == mWindows.end() or !it.value().bound)) {
+            bindWindow(win, editor);
+            return;
+        }
+
+        ensureWindowForView(editor);
+    });
+}
+
 void QNVimCore::syncCursorToVim(Core::IEditor *editor) {
+
     if (!editor)
         editor = Core::EditorManager::currentEditor();
 
-    if (!editor or !mBuffers.contains(editor))
+    if (!editor)
+        return;
+
+    const int buffer = bufferForEditor(editor);
+    const int win = windowForEditor(editor);
+    if (!buffer or !win)
         return;
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
 
     if (mMode == "v" or mMode == "V" or mMode == "\x16" or
         textEditor->textCursor().position() != textEditor->textCursor().anchor())
@@ -248,23 +916,40 @@ void QNVimCore::syncCursorToVim(Core::IEditor *editor) {
     int line = QStringView(text).left(cursorPosition).count('\n') + 1;
     int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
 
-    if (line == mCursor.y() and col == mCursor.x()) {
+    WindowState &st = mWindows[win];
+    if (line == st.cursorLine and col == st.cursorCol)
         return;
-    }
 
-    mCursor.setY(line);
-    mCursor.setX(col);
-    mNVim->api2()->nvim_command(QStringLiteral("buffer %1|call SetCursor(%2,%3)").arg(mBuffers[editor]).arg(line).arg(col).toUtf8());
+    st.cursorLine = line;
+    st.cursorCol = col;
+
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    if (win == mCurrentWindow)
+        mNVim->api2()->nvim_command(QStringLiteral("buffer %1|call SetCursor(%2,%3)").arg(buffer).arg(line).arg(col).toUtf8());
+    else
+        // A cursor in a window that is not the current one: `buffer N` and
+        // friends would affect the current window, set the cursor directly.
+        mNVim->api2()->nvim_win_set_cursor(win, QPoint(col - 1, line));
 }
 
 void QNVimCore::syncSelectionToVim(Core::IEditor *editor) {
     if (!editor)
         editor = Core::EditorManager::currentEditor();
 
-    if (!editor or !mBuffers.contains(editor))
+    if (!editor)
+        return;
+
+    const int buffer = bufferForEditor(editor);
+    const int win = windowForEditor(editor);
+    if (!buffer or !win)
         return;
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
     QString text = textEditor->toPlainText();
 
     auto mtc = textEditor->multiTextCursor();
@@ -320,31 +1005,49 @@ void QNVimCore::syncSelectionToVim(Core::IEditor *editor) {
         visualCommand = "v";
     }
 
-    if (line == mCursor.y() and col == mCursor.x() and vLine == mVCursor.y() and vCol == mVCursor.x())
+    WindowState &st = mWindows[win];
+    if (line == st.cursorLine and col == st.cursorCol and vLine == st.vCursorLine and vCol == st.vCursorCol)
         return;
 
-    mCursor.setY(line);
-    mCursor.setX(col);
-    mVCursor.setY(vLine);
-    mVCursor.setX(vCol);
-    mNVim->api2()->nvim_command(QStringLiteral("buffer %1|normal! \x03%3G%4|%2%5G%6|")
-                                    .arg(mBuffers[editor])
-                                    .arg(visualCommand)
-                                    .arg(vLine)
-                                    .arg(vCol)
-                                    .arg(line)
-                                    .arg(col).toUtf8());
+    st.cursorLine = line;
+    st.cursorCol = col;
+    st.vCursorLine = vLine;
+    st.vCursorCol = vCol;
+
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    if (win == mCurrentWindow)
+        mNVim->api2()->nvim_command(QStringLiteral("buffer %1|normal! \x03%3G%4|%2%5G%6|")
+                                        .arg(buffer)
+                                        .arg(visualCommand)
+                                        .arg(vLine)
+                                        .arg(vCol)
+                                        .arg(line)
+                                        .arg(col).toUtf8());
+    else
+        mNVim->api2()->nvim_win_set_cursor(win, QPoint(col - 1, line));
 }
 
-void QNVimCore::syncCursorFromVim(const QVariantList &pos, const QVariantList &vPos, QByteArray mode) {
-    const int pendingTopline = mPendingTopline;
-    mPendingTopline = 0;
+void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVariantList &vPos, QByteArray mode) {
+    const auto winState = mWindows.find(win);
+    if (winState == mWindows.end())
+        return;
 
-    auto editor = Core::EditorManager::currentEditor();
-    if (!editor or !mBuffers.contains(editor))
+    WindowState &st = *winState;
+    const int pendingTopline = st.pendingTopline;
+    st.pendingTopline = 0;
+
+    // Each window has its own editor (a view shows one editor); the cursor is
+    // applied to it.
+    Core::IEditor *editor = st.editor;
+    if (!mBuffers.value(editor) or mBuffers.value(editor) != st.buffer or mTextBuffer != st.buffer)
         return;
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
     int line = pos[0].toInt();
     int col = pos[1].toInt();
     col = QString::fromUtf8(mText.section('\n', line - 1, line - 1).toUtf8().left(col - 1)).length() + 1;
@@ -354,16 +1057,15 @@ void QNVimCore::syncCursorFromVim(const QVariantList &pos, const QVariantList &v
     vCol = QString::fromUtf8(mText.section('\n', vLine - 1, vLine - 1).toUtf8().left(vCol)).length();
 
     mMode = mode;
-    mCursor.setY(line);
-    mCursor.setX(col);
-    mVCursor.setY(vLine);
-    mVCursor.setX(vCol);
+    st.cursorLine = line;
+    st.cursorCol = col;
+    st.vCursorLine = vLine;
+    st.vCursorCol = vCol;
 
     // Scroll the editor viewport so that the line at the top matches the top line of
     // Neovim's window. This makes Neovim's viewport related commands (`zz`, `zt`, `zb`,
     // `<C-e>`, `<C-y>`, ...) work.
-    if (textEditor and pendingTopline > 0 and
-        pendingTopline - 1 != textEditor->firstVisibleBlockNumber()) {
+    if (pendingTopline > 0 and pendingTopline - 1 != textEditor->firstVisibleBlockNumber()) {
         const QTextBlock block = textEditor->document()->findBlockByNumber(pendingTopline - 1);
 
         if (block.isValid())
@@ -463,23 +1165,40 @@ void QNVimCore::syncToVim(Core::IEditor *editor, std::function<void()> callback)
     if (!editor)
         editor = Core::EditorManager::currentEditor();
 
-    if (!editor or !mBuffers.contains(editor))
+    if (!editor)
+        return;
+
+    const int bufferNumber = bufferForEditor(editor);
+    if (!bufferNumber)
         return;
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
     QString text = textEditor->toPlainText();
     int cursorPosition = textEditor->textCursor().position();
     int line = QStringView(text).left(cursorPosition).count('\n') + 1;
     int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
 
-    if (mText != text) {
-        int bufferNumber = mBuffers[editor];
+    if (mTextBuffer != bufferNumber or mText != text) {
         auto request = mNVim->api2()->nvim_buf_set_lines(bufferNumber, 0, -1, true, text.toUtf8().split('\n'));
         connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
             // The buffer now holds the editor content and may be read back.
             mPendingPush.remove(bufferNumber);
+            mText = text;
+            mTextBuffer = bufferNumber;
+
+            // The cursor is the current window's business; a window that is not
+            // the current one must not be scrolled away from where it is.
+            if (Core::EditorManager::currentEditor() != editor or windowForEditor(editor) != mCurrentWindow) {
+                if (callback)
+                    callback();
+                return;
+            }
+
             connect(mNVim->api2()->nvim_command(QStringLiteral("call cursor(%1,%2)").arg(line).arg(col).toUtf8()),
-                    &NeovimQt::MsgpackRequest::finished, [=, this]() {
+                    &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
                         if (callback)
                             callback();
                     });
@@ -495,49 +1214,60 @@ void QNVimCore::syncFromVim() {
         return;
 
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
-    unsigned long long syncCoutner = ++mSyncCounter;
+    if (!textEditor)
+        return;
 
-    auto request = mNVim->api2()->nvim_eval("[bufnr(''), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0')]");
+    unsigned long long syncCounter = ++mSyncCounter;
+
+    auto request = mNVim->api2()->nvim_eval(
+        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0')]");
     connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
+        if (state.size() < 11)
+            return;
 
-        if (mSyncCounter != syncCoutner)
+        if (mSyncCounter != syncCounter)
             return;
 
         if (!mBuffers.contains(editor)) {
             return;
         }
 
-        int bufferNumber = mBuffers[editor];
-        if (state[0].toString().toLong() != bufferNumber)
+        int bufferNumber = state[0].toString().toLong();
+        int win = state[1].toInt();
+        if (mBuffers[editor] != bufferNumber or !win)
             return;
 
-        unsigned long long changedtick = state[1].toULongLong();
-        QByteArray mode = state[2].toByteArray();
-        bool modified = state[3].toBool();
-        QVariantList pos = state[4].toList().mid(1, 2);
-        QVariantList vPos = state[5].toList().mid(1, 2);
-        int topline = state[9].toList().value(1).toInt();
+        unsigned long long changedtick = state[2].toULongLong();
+        QByteArray mode = state[3].toByteArray();
+        bool modified = state[4].toBool();
+        QVariantList pos = state[5].toList().mid(1, 2);
+        QVariantList vPos = state[6].toList().mid(1, 2);
+        int topline = state[10].toList().value(1).toInt();
 
-        // Neovim's window viewport may have been scrolled without the cursor having moved,
-        // e.g. by `zz`, `zt`, `zb`, `<C-e>` or `<C-y>`. Remember the new top line, so that
-        // the editor viewport can be scrolled to match once the cursor is synced.
-        if (topline > 0 and topline != mNvimTopline) {
-            mNvimTopline = topline;
-            mPendingTopline = topline;
-        }
-
-        mNumber = state[6].toBool();
-        mRelativeNumber = state[7].toBool();
-        mWrap = state[8].toBool();
+        mNumber = state[7].toBool();
+        mRelativeNumber = state[8].toBool();
+        mWrap = state[9].toBool();
         mNumbersColumn->setNumber(mNumber);
         mNumbersColumn->setEditor(mRelativeNumber ? textEditor : nullptr);
 
         if (textEditor->wordWrapMode() != (mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap))
             textEditor->setWordWrapMode(mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap);
 
-        if (mChangedTicks.value(bufferNumber, 0) == changedtick) {
-            syncCursorFromVim(pos, vPos, mode);
+        // Neovim's window viewport may have been scrolled without the cursor having moved,
+        // e.g. by `zz`, `zt`, `zb`, `<C-e>` or `<C-y>`. Remember the new top line, so that
+        // the editor viewport can be scrolled to match once the cursor is synced.
+        auto windowState = mWindows.find(win);
+        if (windowState != mWindows.end()) {
+            WindowState &st = *windowState;
+            if (topline > 0 and topline != st.topline) {
+                st.topline = topline;
+                st.pendingTopline = topline;
+            }
+        }
+
+        if (mChangedTicks.value(bufferNumber, 0) == changedtick and mTextBuffer == bufferNumber) {
+            syncCursorFromVim(win, pos, vPos, mode);
             return;
         }
 
@@ -547,30 +1277,34 @@ void QNVimCore::syncFromVim() {
 
         auto request = mNVim->api2()->nvim_buf_get_lines(bufferNumber, 0, -1, true);
         connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &lines) {
-            if (!mBuffers.contains(editor)) {
+            if (!mBuffers.contains(editor) or mBuffers[editor] != bufferNumber) {
+                // The editor was closed, or shows another buffer by now.
                 return;
             }
 
-            mText.clear();
+            QString text;
             auto linesList = lines.toList();
             for (const auto &t : linesList)
-                mText += QString::fromUtf8(t.toByteArray()) + '\n';
-            mText.chop(1);
+                text += QString::fromUtf8(t.toByteArray()) + '\n';
+            text.chop(1);
 
             QString oldText = textEditor->toPlainText();
-
-            // Non-empty content means the buffer holds the editor content by
-            // now; from here on the buffer is authoritative and empty reads are
-            // genuine (Neovim can empty the buffer, e.g. `dd` or `u`).
-            if (!mText.isEmpty())
-                mPendingPush.remove(bufferNumber);
 
             // A buffer that has not received the editor content yet is empty
             // (qnvim suppresses Neovim's own file reading); such a read must not
             // be applied: the editor content may still be loading from disk and
             // must not be wiped by the empty buffer content.
-            if (mPendingPush.contains(bufferNumber) and mText.isEmpty() and !oldText.isEmpty())
+            if (mPendingPush.contains(bufferNumber) and text.isEmpty() and !oldText.isEmpty())
                 return;
+
+            // Non-empty content means the buffer holds the editor content by
+            // now; from here on the buffer is authoritative and empty reads are
+            // genuine (Neovim can empty the buffer, e.g. `dd` or `u`).
+            if (!text.isEmpty())
+                mPendingPush.remove(bufferNumber);
+
+            mText = text;
+            mTextBuffer = bufferNumber;
 
             Utils::Differ differ;
             auto diff = differ.diff(oldText, mText);
@@ -625,7 +1359,7 @@ void QNVimCore::syncFromVim() {
             if (textEditor->document()->isModified() != modified)
                 textEditor->document()->setModified(modified);
 
-            syncCursorFromVim(pos, vPos, mode);
+            syncCursorFromVim(win, pos, vPos, mode);
         });
     });
 }
@@ -683,7 +1417,6 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
         return;
 
     QString filename(this->filename(editor));
-    mText.clear();
     qDebug(Main) << "Opened " << filename << mSettingBufferFromVim;
 
     QWidget *widget = editor->widget();
@@ -705,75 +1438,61 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     }
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
 
+    // The buffer whose content has to be pushed from the editor once the
+    // editor is in its window.
+    int bufferToInitialize = 0;
+
     if (mBuffers.contains(editor)) {
-        if (!mSettingBufferFromVim)
-            mNVim->api2()->nvim_command(QStringLiteral("buffer %1").arg(mBuffers[editor]).toUtf8());
-    } else {
-        if (mNVim and mNVim->isReady()) {
-            if (mSettingBufferFromVim > 0) {
-                mBuffers[editor] = mSettingBufferFromVim;
-                mEditors[mSettingBufferFromVim] = editor;
-                mPendingPush.insert(mSettingBufferFromVim);
-                initializeBuffer(mSettingBufferFromVim);
-            } else {
-                // Escaping is needed for file names that contain characters
-                // which are special in Ex commands (spaces, quotes, ...).
-                // Quoting the name is not an option: a `"` starts a comment in
-                // Ex commands. fnameescape() does the escaping, so ask Neovim
-                // for it.
-                auto request = mNVim->api2()->nvim_call_function(QByteArrayLiteral("fnameescape"),
-                                                                 {filename});
-                connect(request, &NeovimQt::MsgpackRequest::finished, this,
-                        [=, this](quint32, quint64, const QVariant &escaped) {
-                    auto request = mNVim->api2()->nvim_command(
-                        QStringLiteral("e %1").arg(escaped.toString()).toUtf8());
-                    connect(request, &NeovimQt::MsgpackRequest::error, this,
-                            [](quint32, quint64, const QVariant &err) {
-                                qWarning(Main) << "Could not open file in Neovim:" << err;
-                            });
-                    connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
-                        auto request = mNVim->api2()->nvim_eval(QStringLiteral("bufnr('')").toUtf8());
-                        connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
-                            mBuffers[editor] = v.toInt();
-                            mEditors[v.toInt()] = editor;
-                            mPendingPush.insert(v.toInt());
-                            initializeBuffer(v.toInt());
-                        });
-                    });
-                });
-            }
+        if (!mSettingBufferFromVim and !mInhibitWindowSync and mNVim and mNVim->isReady()) {
+            // The editor became current in Qt Creator: its window shows its
+            // buffer and becomes Neovim's current window (a view without a
+            // window is given one).
+            if (const int win = windowForEditor(editor))
+                syncWindow(win, editor);
+            else
+                ensureWindowForView(editor);
         }
-
-        Core::IDocument *document = editor->document();
-
-        connect(document, &Core::IDocument::contentsChanged, this, [=, this]() {
-                auto buffer = mBuffers.value(editor);
-                QString bufferType = mBufferType[buffer];
-                if (!mEditors.contains(buffer) or (bufferType != "acwrite" and !bufferType.isEmpty()))
-                    return;
-                syncToVim(editor);
-            },
-            Qt::QueuedConnection);
-        connect(textEditor, &TextEditor::TextEditorWidget::cursorPositionChanged, this, [=, this]() {
-                if (Core::EditorManager::currentEditor() != editor)
-                    return;
-                QString newText = textEditor->toPlainText();
-                if (newText != mText)
-                    return;
-                syncCursorToVim(editor);
-            },
-            Qt::QueuedConnection);
-        connect(textEditor, &TextEditor::TextEditorWidget::selectionChanged, this, [=, this]() {
-                if (Core::EditorManager::currentEditor() != editor)
-                    return;
-                QString newText = textEditor->toPlainText();
-                if (newText != mText)
-                    return;
-                syncSelectionToVim(editor);
-            },
-            Qt::QueuedConnection);
-        connect(textEditor->textDocument(), &TextEditor::TextDocument::fontSettingsChanged,
-                this, &QNVimCore::updateCursorSize);
+    } else if (const int sharedBuffer = bufferForEditor(editor)) {
+        // Another editor shows the same document (a Qt Creator split shows its
+        // own editor for the document): they share the Neovim buffer.
+        mBuffers[editor] = sharedBuffer;
+        setupEditor(editor);
+    } else if (mSettingBufferFromVim > 0 and mNVim and mNVim->isReady()) {
+        // The editor is created from a Neovim autocommand for a known buffer.
+        mBuffers[editor] = mSettingBufferFromVim;
+        mEditors[mSettingBufferFromVim] = editor;
+        mPendingPush.insert(mSettingBufferFromVim);
+        setupEditor(editor);
+        bufferToInitialize = mSettingBufferFromVim;
+    } else if (mNVim and mNVim->isReady()) {
+        setupEditor(editor);
+        // Escaping is needed for file names that contain characters
+        // which are special in Ex commands (spaces, quotes, ...).
+        // Quoting the name is not an option: a `"` starts a comment in
+        // Ex commands. fnameescape() does the escaping, so ask Neovim
+        // for it.
+        auto request = mNVim->api2()->nvim_call_function(QByteArrayLiteral("fnameescape"),
+                                                         {filename});
+        connect(request, &NeovimQt::MsgpackRequest::finished, this,
+                [=, this](quint32, quint64, const QVariant &escaped) {
+            auto request = mNVim->api2()->nvim_command(
+                QStringLiteral("e %1").arg(escaped.toString()).toUtf8());
+            connect(request, &NeovimQt::MsgpackRequest::error, this,
+                    [](quint32, quint64, const QVariant &err) {
+                        qWarning(Main) << "Could not open file in Neovim:" << err;
+                    });
+            connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
+                auto request = mNVim->api2()->nvim_eval(QStringLiteral("bufnr('')").toUtf8());
+                connect(request, &NeovimQt::MsgpackRequest::finished, this,
+                        [=, this](quint32, quint64, const QVariant &v) {
+                    mBuffers[editor] = v.toInt();
+                    mEditors[v.toInt()] = editor;
+                    mPendingPush.insert(v.toInt());
+                    initializeBuffer(v.toInt());
+                    attachEditorToWindow(editor);
+                });
+            });
+        });
     }
     mSettingBufferFromVim = 0;
 
@@ -781,6 +1500,11 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
 
     widget->setAttribute(Qt::WA_KeyCompression, false);
     widget->installEventFilter(this);
+
+    attachEditorToWindow(editor);
+
+    if (bufferToInitialize)
+        initializeBuffer(bufferToInitialize);
 
     QTimer::singleShot(100, this, [=, this]() { fixSize(editor); });
 }
@@ -793,7 +1517,13 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
     if (Core::EditorManager::currentEditor() == editor)
         mNumbersColumn->setEditor(nullptr);
 
-    int bufferNumber = mBuffers[editor];
+    const int bufferNumber = mBuffers[editor];
+    // Whether Neovim is behind the close (it is deleting the buffer, or closed
+    // the window the editor is shown in): the window must then be left alone.
+    const bool vimInitiated = mVimInitiatedClose;
+    const int win = windowForEditor(editor);
+    const QPointer<QWidget> view = editorViewWidget(editor);
+
     mBuffers.remove(editor);
 
     // Another editor may still show the same Neovim buffer (e.g. the other half
@@ -805,18 +1535,34 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
         mEditors[bufferNumber] = remainingEditors.contains(currentEditor)
                                      ? currentEditor
                                      : remainingEditors.first();
-        return;
+    } else {
+        // When Neovim itself is deleting the buffer, it is already gone or being
+        // deleted there; `bd!` would only fail with E516 and show a bogus message.
+        if (!mVimInitiatedClose and mNVim and mNVim->isReady())
+            mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(bufferNumber).toUtf8());
+
+        mEditors.remove(bufferNumber);
+        mChangedTicks.remove(bufferNumber);
+        mBufferType.remove(bufferNumber);
+        mPendingPush.remove(bufferNumber);
     }
 
-    // When Neovim itself is deleting the buffer, it is already gone or being
-    // deleted there; `bd!` would only fail with E516 and show a bogus message.
-    if (!mVimInitiatedClose and mNVim and mNVim->isReady())
-        mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(bufferNumber).toUtf8());
-
-    mEditors.remove(bufferNumber);
-    mChangedTicks.remove(bufferNumber);
-    mBufferType.remove(bufferNumber);
-    mPendingPush.remove(bufferNumber);
+    if (win and !vimInitiated and view) {
+        // The editor is gone from the view; the window has nothing left to
+        // represent if the view stays empty. Wait for the close to be fully
+        // processed: another editor may end up in the view (Qt Creator keeps
+        // the split with its remaining editors, or picks a replacement).
+        QTimer::singleShot(0, this, [this, win, view]() {
+            auto it = mWindows.find(win);
+            if (it == mWindows.end() or it.value().view != view)
+                return; // the window is gone, or another view is bound to it
+            if (editorForView(view))
+                return; // the view shows another editor now
+            if (mWindows.size() <= 1)
+                return; // Neovim cannot close its last window
+            closeWindowForView(win);
+        });
+    }
 }
 
 QList<Core::IEditor *> QNVimCore::editorsForBuffer(int buffer) const {
@@ -895,10 +1641,10 @@ void QNVimCore::initializeBuffer(int buffer) {
 }
 
 void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &args) {
-    auto editor = Core::EditorManager::currentEditor();
-
-    if (!editor or !mBuffers.contains(editor))
+    if (name == "redraw") {
+        redraw(args);
         return;
+    }
 
     if (name == "Gui") {
         QByteArray method = args.first().toByteArray();
@@ -906,6 +1652,66 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
         if (method == "triggerCommand") {
             for (const auto& methodArg : methodArgs)
                 triggerCommand(methodArg.toByteArray());
+        } else if (method == "winAutoCommand") {
+            const QByteArray event = methodArgs.value(0).toByteArray();
+            const int win = methodArgs.value(1).toInt();
+            const int buffer = methodArgs.value(2).toInt();
+            if (!win)
+                return;
+
+            if (event == "WinNew") {
+                // A window Neovim created: if it is still nothing but a window
+                // once the command that created it was fully processed, it is a
+                // split that needs an editor view (reconcileWindows()).
+                if (!mWindows.contains(win))
+                    mWindows[win].buffer = buffer;
+                mNewWindows.insert(win);
+                mWindowsDirty = true;
+            } else if (event == "WinEnter") {
+                if (!mWindows.contains(win))
+                    mWindows[win].buffer = buffer;
+                mCurrentWindow = win;
+                // The user moved to the window in Neovim: show its editor in
+                // Qt Creator (the window may not have a view yet).
+                if (!mInhibitWindowSync)
+                    activateWindowEditor(win);
+            } else if (event == "WinClosed") {
+                if (mClosingWindows.remove(win))
+                    return; // qnvim closed the window (its editor view is gone)
+
+                mNewWindows.remove(win);
+                auto windowState = mWindows.find(win);
+                if (windowState == mWindows.end())
+                    return;
+
+                const WindowState st = *windowState;
+                const bool current = (mCurrentWindow == win);
+                // The window has a view that Qt Creator must remove as well; a
+                // view the editor was moved out of is left alone.
+                const bool viewRemoved = st.view and st.editor
+                                         and editorViewWidget(st.editor) == st.view
+                                         and windowForView(st.view) == win;
+                mWindows.erase(windowState);
+                if (current)
+                    mCurrentWindow = 0; // the WinEnter of the new current window follows
+
+                if (!viewRemoved)
+                    return;
+
+                // The editors in the view are closed as part of the removal;
+                // their buffers are kept (Neovim closed a window, not a buffer).
+                Core::EditorManager::activateEditor(st.editor);
+                const bool removingView = mRemovingView;
+                const bool vimInitiatedClose = mVimInitiatedClose;
+                const bool inhibited = mInhibitWindowSync;
+                mRemovingView = true;
+                mVimInitiatedClose = true;
+                mInhibitWindowSync = true;
+                triggerCommand(QByteArrayLiteral("QtCreator.RemoveCurrentSplit"));
+                mInhibitWindowSync = inhibited;
+                mRemovingView = removingView;
+                mVimInitiatedClose = vimInitiatedClose;
+            }
         } else if (method == "fileAutoCommand") {
             QByteArray cmd = methodArgs.first().toByteArray();
             int buffer = methodArgs[1].toByteArray().toInt();
@@ -929,13 +1735,14 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                         mNVim->api2()->nvim_command("doautocmd BufEnter");
                 }
             } else if (cmd == "BufWriteCmd") {
-                if (mEditors.contains(buffer)) {
-                    QString currentFilename = this->filename(mEditors[buffer]);
-                    if (mEditors[buffer]->document()->save(Utils::FilePath::fromString(filename))) {
+                Core::IEditor *bufferEditor = mEditors.value(buffer);
+                if (bufferEditor) {
+                    QString currentFilename = this->filename(bufferEditor);
+                    if (bufferEditor->document()->save(Utils::FilePath::fromString(filename))) {
                         if (currentFilename != filename) {
                             mEditors.remove(buffer);
                             mChangedTicks.remove(buffer);
-                            mBuffers.remove(editor);
+                            mBuffers.remove(bufferEditor);
 
                             auto request = mNVim->api2()->nvim_buf_set_name(buffer, filename.toUtf8());
                             connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &) {
@@ -950,6 +1757,29 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 }
             } else if (cmd == "BufEnter") {
                 mBufferType[buffer] = bufferType;
+                // The window the buffer was entered in (the preamble reports 0
+                // for windows without a counterpart in the editor area).
+                const int win = methodArgs.value(7).toInt();
+                if (win and mNewWindows.contains(win)) {
+                    // The window has no editor view yet: remember what it ended
+                    // up showing; its view is created once the command that
+                    // created the window was fully processed.
+                    mWindows[win].buffer = buffer;
+                    mWindowsDirty = true;
+                    return;
+                }
+                if (win and mWindows.value(win).bound) {
+                    // The window has an editor view: it shows the buffer now.
+                    updateWindowBuffer(win, buffer, filename, bufferType, alwaysText);
+                    return;
+                }
+
+                // Neovim changed the buffer shown where Qt Creator has no
+                // (or not yet a) window: open the buffer's editor.
+                Core::IEditor *editor = Core::EditorManager::currentEditor();
+                if (!editor or !mBuffers.contains(editor))
+                    return;
+
                 [[maybe_unused]] Core::IEditor *e = nullptr;
                 mSettingBufferFromVim = buffer;
                 if (!filename.isEmpty() and filename != this->filename(editor)) {
@@ -1009,13 +1839,13 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                     closeEditorsForBuffer(buffer);
             }
         }
-    } else if (name == "redraw")
-        redraw(args);
+    }
 }
 
 void QNVimCore::redraw(const QVariantList &args) {
     auto editor = Core::EditorManager::currentEditor();
-    auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    auto textEditor = editor ? qobject_cast<TextEditor::TextEditorWidget *>(editor->widget())
+                             : nullptr;
     bool shouldSync = false;
     bool flush = false;
 
@@ -1060,17 +1890,21 @@ void QNVimCore::redraw(const QVariantList &args) {
             qint64 val = args[0].toLongLong();
             if (val != -1) {
                 mForegroundColor = QRgb(val);
-                QPalette palette = textEditor->palette();
-                palette.setColor(QPalette::WindowText, mForegroundColor);
-                textEditor->setPalette(palette);
+                if (textEditor) {
+                    QPalette palette = textEditor->palette();
+                    palette.setColor(QPalette::WindowText, mForegroundColor);
+                    textEditor->setPalette(palette);
+                }
             }
 
             val = args[1].toLongLong();
             if (val != -1) {
                 mBackgroundColor = QRgb(val);
-                QPalette palette = textEditor->palette();
-                palette.setBrush(QPalette::Window, mBackgroundColor);
-                textEditor->setPalette(palette);
+                if (textEditor) {
+                    QPalette palette = textEditor->palette();
+                    palette.setBrush(QPalette::Window, mBackgroundColor);
+                    textEditor->setPalette(palette);
+                }
             }
 
             val = args[2].toLongLong();
@@ -1111,6 +1945,13 @@ void QNVimCore::redraw(const QVariantList &args) {
         }
     }
 
+    if (flush) {
+        // Neovim has fully processed the command that caused this redraw: the
+        // windows and the editor views can be reconciled.
+        closeWindowsForRemovedViews();
+        reconcileWindows();
+    }
+
     if (shouldSync and flush)
         syncFromVim();
 
@@ -1119,7 +1960,13 @@ void QNVimCore::redraw(const QVariantList &args) {
 
 void QNVimCore::updateCursorSize() {
     auto editor = Core::EditorManager::currentEditor();
+    if (!editor)
+        return;
+
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
     QFontMetricsF textEditorFontMetric(textEditor->textDocument()->fontSettings().font());
 
     if (mBusy) {
