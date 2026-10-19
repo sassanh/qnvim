@@ -69,6 +69,21 @@ class QNVimCore : public QObject {
     void saveCursorFlashTime(int cursorFlashTime);
 
   private:
+    // Neovim is ready: set it up. Neovim notifies qnvim through the events of
+    // the "Gui" autocommands (defined by src/preamble.vim) and through buffer
+    // updates; the UI attachment makes Neovim draw at all.
+    void setupNeovim();
+    // Qt Creator -> Neovim: send the VimL setup (src/preamble.vim) as one
+    // `:command`, prefixed by qnvim's channel number (g:neovim_channel).
+    void sendPreamble();
+    // Attach qnvim as Neovim's UI: the ext_* options decide which events
+    // Neovim sends (see the redraw notifications), and the editor the user is
+    // in is opened once the attachment is done.
+    void attachUi();
+    // Neovim -> Qt Creator: subscribe to the notifications qnvim handles (see
+    // handleNotification()).
+    void installGuiHooks();
+
     void editorOpened(Core::IEditor *);
     void editorAboutToClose(Core::IEditor *);
 

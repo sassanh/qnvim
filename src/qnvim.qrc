@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/qnvim">
+        <file>preamble.vim</file>
+    </qresource>
+</RCC>

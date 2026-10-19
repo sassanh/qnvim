@@ -14,6 +14,7 @@ add_qtc_plugin(QNVim
     log.h
     numbers_column.cpp
     numbers_column.h
+    qnvim.qrc
     qnvim_global.h
     qnvimconstants.h
     qnvimplugin.cpp
@@ -27,3 +28,8 @@ add_qtc_plugin(QNVim
     textediteventfilter.cpp
     textediteventfilter.h
 )
+
+# Compress the resource with zlib instead of zstd: rcc's zstd resources refer to
+# qt_resourceFeatureZstd, which some QtCore versions do not export (the Qt 6.11
+# of the test Qt Creator, for one), and the plugin would fail to load there.
+set_source_files_properties(qnvim.qrc PROPERTIES AUTORCC_OPTIONS "--compress-algo;zlib")

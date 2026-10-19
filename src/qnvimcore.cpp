@@ -127,100 +127,7 @@ QNVimCore::QNVimCore(QObject *parent)
         clearFloats();
     });
 
-    connect(mNVim, &NeovimQt::NeovimConnector::ready, this, [=, this]() {
-        const QByteArray setupCommand = QStringLiteral("\
-let g:QNVIM_always_text=v:true\n\
-let g:neovim_channel=%1\n\
-execute \"command -bar Build call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
-execute \"command -bar BuildProject call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')\"\n\
-execute \"command -bar BuildAll call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.BuildSession')\"\n\
-execute \"command -bar Rebuild call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Rebuild')\"\n\
-execute \"command -bar RebuildProject call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Rebuild')\"\n\
-execute \"command -bar RebuildAll call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.RebuildSession')\"\n\
-execute \"command -bar Clean call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Clean')\"\n\
-execute \"command -bar CleanProject call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Clean')\"\n\
-execute \"command -bar CleanAll call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.CleanSession')\"\n\
-execute \"command -bar Deploy call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Deploy')\"\n\
-execute \"command -bar DeployProject call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Deploy')\"\n\
-execute \"command -bar DeployAll call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.DeploySession')\"\n\
-execute \"command -bar Run call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Run')\"\n\
-execute \"command -bar Debug call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Debug')\"\n\
-execute \"command -bar DebugStart call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Debug')\"\n\
-execute \"command -bar DebugContinue call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.Continue')\"\n\
-execute \"command -bar QMake call rpcnotify(%1, 'Gui', 'triggerCommand', 'Qt4Builder.RunQMake')\"\n\
-execute \"command -bar Target call rpcnotify(%1, 'Gui', 'triggerCommand', 'ProjectExplorer.SelectTargetQuick')\"\n\
-\
-execute \"autocmd BufReadCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufReadCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
-execute \"autocmd BufReadCmd * if &buftype ==# 'help' | setlocal modifiable | silent! call setline(1, readfile(expand('<afile>:p'))) | setlocal nomodifiable nomodified | endif\"\n\
-execute \"autocmd TermOpen * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'TermOpen', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
-execute \"autocmd BufWriteCmd * :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)|set nomodified\"\n\
-execute \"autocmd BufEnter * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text, win_gettype() ==# '' ? win_getid() : 0)\"\n\
-execute \"autocmd BufDelete * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
-execute \"autocmd BufHidden * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufHidden', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
-execute \"autocmd BufWipeout * nested :call rpcnotify(%1, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)\"\n\
-\
-function! SetCursor(line, col)\n\
-    call cursor(a:line, a:col)\n\
-    if mode()[0] ==# 'i' or mode()[0] ==# 'R'\n\
-        normal! i\x07u\x03\n\
-    endif\n\
-    call cursor(a:line, a:col)\n\
-endfunction\n\
-function! QNVimWinEvent(event, win, buffer)\n\
-    if win_gettype(a:win) !=# ''\n\
-        return\n\
-    endif\n\
-    call rpcnotify(%1, 'Gui', 'winAutoCommand', a:event, a:win, a:buffer)\n\
-endfunction\n\
-execute \"autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), winbufnr(win_getid()))\"\n\
-execute \"autocmd WinEnter * call QNVimWinEvent('WinEnter', win_getid(), winbufnr(win_getid()))\"\n\
-execute \"autocmd WinClosed * call QNVimWinEvent('WinClosed', str2nr(expand('<amatch>')), 0)\"\n\
-function! QNVimWindowInfo()\n\
-    let l:windows = []\n\
-    for l:info in getwininfo()\n\
-        if win_gettype(l:info.winid) ==# ''\n\
-            let l:name = bufname(l:info.bufnr)\n\
-            call add(l:windows, [l:info.winid, l:info.bufnr, empty(l:name) ? '' : fnamemodify(l:name, ':p'), l:info.winrow, l:info.wincol, l:info.width, l:info.height, l:info.tabnr, l:info.winid ==# win_getid()])\n\
-        endif\n\
-    endfor\n\
-    return l:windows\n\
-endfunction\n\
-autocmd VimEnter * let $MYQVIMRC=substitute(substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 'g'), 'init.lua$', 'qnvim.vim', 'g') | source $MYQVIMRC")
-                                                      .arg(mNVim->channel()).toUtf8();
-        auto setupRequest = mNVim->api2()->nvim_command(setupCommand);
-        connect(setupRequest, &NeovimQt::MsgpackRequest::error, this,
-                [](quint32, quint64, const QVariant &error) {
-            qWarning(Main) << "Could not set up Neovim:" << error;
-        });
-        connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
-                this, &QNVimCore::handleNotification);
-
-        QVariantMap options;
-        options.insert("ext_popupmenu", true);
-        options.insert("ext_tabline", false);
-        options.insert("ext_cmdline", true);
-        options.insert("ext_wildmenu", true);
-        options.insert("ext_messages", true);
-        options.insert("ext_multigrid", true);
-        options.insert("ext_hlstate", true);
-        options.insert("rgb", true);
-        NeovimQt::MsgpackRequest *request = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
-        request->setTimeout(10000);
-        connect(request, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
-        connect(request, &NeovimQt::MsgpackRequest::timeout, [=, this]() {
-            qCritical(Main) << "Neovim: Connection timed out!";
-        });
-        connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
-            qInfo(Main) << "Neovim: attached!";
-
-            auto pCurrentEditor = Core::EditorManager::currentEditor();
-            if (pCurrentEditor)
-                QNVimCore::editorOpened(pCurrentEditor);
-        });
-
-        mNVim->api2()->nvim_subscribe("Gui");
-        mNVim->api2()->nvim_subscribe("api-buffer-updates");
-    });
+    connect(mNVim, &NeovimQt::NeovimConnector::ready, this, &QNVimCore::setupNeovim);
 
     m_cmdLine = new CmdLine(this);
 }
@@ -274,6 +181,73 @@ QNVimCore::~QNVimCore()
 
     if (mNVim)
         mNVim->deleteLater();
+}
+
+void QNVimCore::setupNeovim() {
+    sendPreamble();
+    attachUi();
+    installGuiHooks();
+}
+
+// The preamble defines the commands and autocommands that make Neovim notify
+// qnvim through the channel; Neovim gets the channel number as the first line
+// of what is sent, so the rest of the preamble can call rpcnotify() with it.
+void QNVimCore::sendPreamble() {
+    QFile preamble(QStringLiteral(":/qnvim/preamble.vim"));
+    if (!preamble.open(QFile::ReadOnly | QFile::Text)) {
+        qWarning(Main) << "Could not read the VimL preamble:" << preamble.errorString();
+        return;
+    }
+
+    QByteArray setupCommand = "let g:neovim_channel=";
+    setupCommand += QByteArray::number(static_cast<qulonglong>(mNVim->channel()));
+    setupCommand += "\n";
+    setupCommand += preamble.readAll();
+
+    auto setupRequest = mNVim->api2()->nvim_command(setupCommand);
+    connect(setupRequest, &NeovimQt::MsgpackRequest::error, this,
+            [](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not set up Neovim:" << error;
+    });
+}
+
+// The ext_* options decide which events Neovim sends (the redraw events qnvim
+// renders). Attaching is what makes Neovim draw at all, so the editor the user
+// is in is opened once the attachment is done.
+void QNVimCore::attachUi() {
+    QVariantMap options;
+    options.insert("ext_popupmenu", true);
+    options.insert("ext_tabline", false);
+    options.insert("ext_cmdline", true);
+    options.insert("ext_wildmenu", true);
+    options.insert("ext_messages", true);
+    options.insert("ext_multigrid", true);
+    options.insert("ext_hlstate", true);
+    options.insert("rgb", true);
+    NeovimQt::MsgpackRequest *request = mNVim->api2()->nvim_ui_attach(mWidth, mHeight, options);
+    request->setTimeout(10000);
+    connect(request, &NeovimQt::MsgpackRequest::timeout, mNVim, &NeovimQt::NeovimConnector::fatalTimeout);
+    connect(request, &NeovimQt::MsgpackRequest::timeout, [=, this]() {
+        qCritical(Main) << "Neovim: Connection timed out!";
+    });
+    connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
+        qInfo(Main) << "Neovim: attached!";
+
+        auto pCurrentEditor = Core::EditorManager::currentEditor();
+        if (pCurrentEditor)
+            QNVimCore::editorOpened(pCurrentEditor);
+    });
+}
+
+// The autocommands of the preamble and the buffer updates arrive as
+// notifications (see handleNotification()); qnvim has to subscribe to them
+// before Neovim sends any.
+void QNVimCore::installGuiHooks() {
+    connect(mNVim->api2(), &NeovimQt::NeovimApi2::neovimNotification,
+            this, &QNVimCore::handleNotification);
+
+    mNVim->api2()->nvim_subscribe("Gui");
+    mNVim->api2()->nvim_subscribe("api-buffer-updates");
 }
 
 QString QNVimCore::filename(Core::IEditor *editor) const {
