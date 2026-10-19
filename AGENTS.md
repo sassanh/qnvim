@@ -137,14 +137,11 @@ QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
   changes (`:set number`, a sign appearing, ...) or the grid id changes.
   Qt's layout keeps a run of spaces that straddles a wrap point at the end of
   the previous row (the row then exceeds the width by the run), while Neovim
-  always breaks at the cell, so such rows differ by the run length. A position
-  Neovim considers the first cell of a row can therefore be drawn at the end of
-  the previous row: `drawnRowStartPosition()` puts the editor's cursor on the
-  first position the editor draws at the start of that row instead
-  (`QPlainTextEdit::cursorRect()` maps through the block layout's
-  `lineForTextPosition()` and `line.y()`, so it tells which row a position is
-  drawn on). Neovim's own position is left alone; `st.cursorCol` records where
-  the editor's cursor is drawn, or `syncCursorToVim()` would send it back.
+  always breaks at the cell, so such rows differ by the run length. Qt does this
+  with any wrap mode (checked with a standalone `QTextLayout` program), so it
+  cannot be avoided from here. A position Neovim considers the first cell of a
+  row can therefore be drawn at the end of the previous row: the editor's cursor
+  is put on Neovim's exact position all the same, so it can show up there.
 - A window's grid **row 0 is its winbar** when one is set (dropbar sets a
   global one): Neovim's text area is the grid height minus the winbar, while
   `resizeWindow()` sizes the grid to the editor's rows, so with a winbar

@@ -302,50 +302,6 @@ static int textColumns(const TextEditor::TextEditorWidget *textEditor) {
     return qMax(0, qRound(width * 64)) / cell;
 }
 
-// The editor keeps a run of spaces that straddles a wrap point at the end of
-// the previous row (Neovim starts the next row with those spaces). A position
-// that Neovim considers the first cell of a row is then drawn at the end of the
-// previous row, one row above the one it belongs to. Returns the first position
-// the editor draws at the start of that row, so that the cursor shows up on the
-// row Neovim's cursor is on. Neovim's own position is not involved: this only
-// decides where the editor's cursor is put.
-static int drawnRowStartPosition(const TextEditor::TextEditorWidget *textEditor, int position, int columns) {
-    if (columns <= 0)
-        return position;
-
-    const QTextBlock block = textEditor->document()->findBlock(position);
-    if (!block.isValid())
-        return position;
-
-    // Neovim's rows are its cells: only a position at a multiple of the
-    // columns starts one. The block's first position starts a row in both
-    // models, so it is left alone.
-    const auto tabs = textEditor->textDocument()->tabSettings();
-    const int column = tabs.columnAt(block.text(), position - block.position());
-    if (column <= 0 or column % columns)
-        return position;
-
-    auto rowOf = [textEditor, &block](int pos) {
-        QTextCursor cursor(block);
-        cursor.setPosition(pos);
-        return textEditor->cursorRect(cursor).top();
-    };
-
-    const int top = rowOf(position);
-    if (top != rowOf(position - 1))
-        return position; // the editor draws this position at the start of a row
-
-    // The first position the editor draws on the next row; a run of spaces it
-    // kept on this row starts that row in Neovim.
-    const int end = qMin(block.position() + block.length(), position + columns);
-    for (int next = position + 1; next < end; ++next) {
-        if (rowOf(next) != top)
-            return next;
-    }
-
-    return position;
-}
-
 // Sets how an editor wraps its lines: with Neovim's 'wrap' on it wraps at any
 // character (Neovim breaks at the cell it runs out of room at, not at a word
 // boundary), with 'wrap' off it does not wrap at all.
@@ -1462,16 +1418,12 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
     } else {
         QTextCursor cursor = textEditor->textCursor();
 
-        // Spaces the editor kept at the end of the previous row start this row
-        // in Neovim: show the cursor on the row it belongs to. st.cursorCol has
-        // to record where the cursor is drawn, or syncCursorToVim() would send
-        // this position back (Neovim keeps its own position).
-        const int drawn = drawnRowStartPosition(textEditor, position, textColumns(textEditor));
-        if (drawn != position)
-            st.cursorCol = mText.left(drawn).section('\n', -1).toUtf8().length() + 1;
-
+        // The editor's cursor follows Neovim's position exactly, even where the
+        // editor draws that position at the end of the previous row: Qt keeps a
+        // run of spaces that straddles a wrap point with the previous row, so
+        // the first cells of a row Neovim starts with spaces are drawn there.
         cursor.clearSelection();
-        cursor.setPosition(drawn);
+        cursor.setPosition(position);
 
         if (textEditor->textCursor().position() != cursor.position() or
             textEditor->textCursor().hasSelection())
