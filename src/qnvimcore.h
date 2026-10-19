@@ -1,5 +1,7 @@
 #pragma once
 
+#include "qnvimfloat.h"
+
 #include <QColor>
 #include <QList>
 #include <QMap>
@@ -7,6 +9,7 @@
 #include <QPoint>
 #include <QPointer>
 #include <QSet>
+#include <QSize>
 
 namespace Core {
 class IEditor;
@@ -76,6 +79,9 @@ class QNVimCore : public QObject {
     void detectFiletype(int);
     void handleNotification(const QByteArray &, const QVariantList &);
     void redraw(const QVariantList &);
+    // One event of a redraw notification ("win_pos", "grid_line", ...), with
+    // the args of that one event.
+    void redrawEvent(const QByteArray &, const QVariantList &);
     void updateCursorSize();
 
     // A Neovim window and the editor view that represents it. A window shows
@@ -115,9 +121,78 @@ class QNVimCore : public QObject {
         // text: for the text to fill the view, the grid must be that many
         // columns wider than the view (-1 while unknown).
         int textoff = -1;
+        // The rows of the winbar (dropbar sets one), which is grid row 0 of the
+        // window: the window's text starts that many rows lower.
+        int winbar = 0;
+        // Where the window sits on Neovim's screen, in cells (see win_pos).
+        // Its grid starts there; the editor view an editor is drawn in can be
+        // anywhere, so floats anchored to the window are placed relative to
+        // their editor view instead.
+        int startRow = 0;
+        int startCol = 0;
         // The size last requested for the grid, to not request it again.
         int gridWidth = 0;
         int gridHeight = 0;
+    };
+
+    // A floating window Neovim shows (a picker, a hover popup, ...): where it is
+    // on Neovim's screen, how it stacks with the other floats and the overlay
+    // that shows it (see qnvimfloat.h). A grid whose events qnvim saw is
+    // remembered with this state as well, before it is known to be a float
+    // (win_float_pos) or a window's grid (win_pos): `isFloat` says which it
+    // turned out to be.
+    struct FloatState {
+        bool isFloat = false;
+        int win = 0;
+        // The grid the float is anchored to (win_float_pos' anchor_grid): the
+        // screen (grid 1, the whole main window), a window's grid, or another
+        // float's grid. The float is placed relative to the cell (0, 0) of that
+        // grid, which is not the same as the top left of Neovim's screen for a
+        // window's grid: the window is shown in an editor view somewhere.
+        int anchorGrid = 1;
+        // The window's grid a screen-anchored float is placed relative to
+        // instead of the screen (0: none, see placeFloats()): plugins that put
+        // a popup at the cursor compute the cursor's screen cell (screenpos(),
+        // screenline(), ...) and open an editor-anchored float there, which
+        // belongs to the editor view the cursor is in. Decided when the float's
+        // position is (re)configured and kept afterwards: moving the cursor
+        // does not move a float that was placed at it.
+        int cursorGrid = 0;
+        int classifiedRow = -1;
+        int classifiedCol = -1;
+        // Whether the float sits in the cmdline area of Neovim's screen: a
+        // plugin that completes a `:` command puts its menu right above the
+        // cmdline, which is the row below the window's text. qnvim's editor
+        // view has its cmdline widget there, so such a float is kept above it
+        // (see placeFloats()).
+        bool atCmdline = false;
+        // Top left corner of the float on Neovim's screen, in cells. The screen
+        // is grid 1, which qnvim sizes to the whole main window.
+        int row = 0;
+        int col = 0;
+        // Neovim's rendering order of the floats: a float with a higher
+        // compindex is drawn over one with a lower one.
+        int compindex = 0;
+        // Whether the float can receive mouse events.
+        bool mouse = false;
+        // Whether Neovim shows the float: win_float_pos shows it, win_hide
+        // hides it without destroying it.
+        bool visible = false;
+        // The overlay, created once the size of the float's grid is known.
+        QPointer<FloatWidget> widget;
+    };
+
+    // A highlight definition from Neovim (hl_attr_define), in the form the
+    // float overlays are drawn with.
+    struct HlAttr {
+        // Invalid colors are Neovim's defaults (default_colors_set).
+        QColor foreground;
+        QColor background;
+        int blend = 0;
+        bool reverse = false;
+        bool bold = false;
+        bool italic = false;
+        bool underline = false;
     };
 
     // The buffer of the editor, or of another editor that shares its document
@@ -174,6 +249,35 @@ class QNVimCore : public QObject {
     // Close Neovim windows whose editor views were removed in Qt Creator.
     void closeWindowsForRemovedViews();
 
+    // Neovim's floating windows (pickers, hover popups, ...) are shown as
+    // overlays inside Qt Creator's main window (see qnvimfloat.h).
+    //
+    // Remember that Neovim draws in `grid`: the events of a grid can arrive
+    // before the event that says what the grid is (win_float_pos for a float,
+    // win_pos for a window), and a float's content must not be dropped then.
+    void rememberGrid(int grid);
+    // Whether the grid is one of the windows' grids, which draw documents that
+    // Qt Creator shows itself.
+    bool isWindowGrid(int grid) const;
+    // The widget of a float, created when its grid is resized.
+    FloatWidget *floatWidget(int grid);
+    // Redraw the overlays: show the visible floats with a size, place them
+    // where Neovim has them on the screen (which is the text area of the
+    // current editor) and stack them in Neovim's order.
+    void placeFloats();
+    void setFloatGridSize(int grid, int rows, int cols);
+    void setFloatGridLine(int grid, int row, int col, const QVariantList &cells);
+    void scrollFloatGrid(int grid, int top, int bot, int left, int right, int rows, int cols);
+    void clearFloatGrid(int grid);
+    // Neovim closed the float (win_close) or its grid (grid_destroy).
+    void closeFloat(int grid);
+    // Forget every float and delete the overlays (Neovim is gone, or qnvim
+    // shuts down).
+    void clearFloats();
+    // The cell a grid_line cell is drawn as: the colors and style come from the
+    // cell's highlight and Neovim's defaults.
+    FloatCell floatCell(int hlId, const QString &text) const;
+
     bool mEnabled = true;
 
     CmdLine *m_cmdLine = nullptr;
@@ -210,6 +314,15 @@ class QNVimCore : public QObject {
     // Qt Creator's "Enable text wrapping" setting as last seen; it is kept in
     // sync with Neovim's 'wrap' option (see syncFromVim()).
     bool mWrapSetting = false;
+
+    // Neovim's floating windows, by the grid they are drawn in, and the
+    // highlights their cells use (hl_attr_define id -> attributes).
+    QMap<int, FloatState> mFloats;
+    QMap<int, HlAttr> mHlAttrs;
+    // The size every grid last reported (grid_resize, by grid id). A float's
+    // grid can be reported before the win_float_pos that tells qnvim it is a
+    // float: the size is remembered until the float's overlay is created.
+    QMap<int, QSize> mGridSizes;
 
     // The editor view a Neovim window is being created for: the window that
     // appears for it is tied to that view (instead of being mistaken for a

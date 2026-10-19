@@ -210,6 +210,18 @@ QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
   - `mNewWindows`: windows seen `WinNew` but not yet bound, reconciled later.
   - `mBuffers` (editor → buffer) and `mEditors` (buffer → editor).
   - `mCurrentWindow`: Neovim's current window.
+- Floating windows: each float grid ↔ one `FloatWidget` overlay
+  (`src/qnvimfloat.*`), created when the float's grid size is known and placed
+  by `placeFloats()` from `win_float_pos` relative to its `anchor_grid`: the
+  screen (grid 1) is the whole main window, a window's grid is that editor
+  view's text area (minus `textoff` columns and `winbar` rows), another float's
+  grid is that float's own position. A screen-anchored float that sits at the
+  cursor's screen row or that reaches into the cmdline area (plugins compute an
+  editor cell: nvim-cmp) is classified as belonging to the current window's
+  editor view; the classification is sticky per float while its row/col stay
+  unchanged, a float lying inside a classified one (a scrollbar inside its
+  menu) follows it, and cmdline floats are kept above the editor view's cmdline
+  widget. Floats are stacked in `compindex` order.
 - Neovim → Qt: `winAutoCommand` notifications; `reconcileWindows()` polls
   `QNVimWindowInfo()` on redraw flush when `mWindowsDirty`, creates views for
   new windows (`createViewForWindow`) and binds windows.
@@ -239,6 +251,8 @@ QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
 
 ## Known limitations (keep docs in sync)
 
+- Floating windows are shown as overlays: no cursor inside them and no mouse
+  forwarding (see `placeFloats()` for how they are placed).
 - Split sizes are not synced (moving the Qt splitter does not resize the
   Neovim window, and vice versa has edge cases).
 - Neovim tabpages are all shown as splits in the same editor area.

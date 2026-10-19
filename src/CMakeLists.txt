@@ -20,6 +20,8 @@ add_qtc_plugin(QNVim
     qnvimplugin.h
     qnvimcore.cpp
     qnvimcore.h
+    qnvimfloat.cpp
+    qnvimfloat.h
     cmdline.cpp
     cmdline.h
     textediteventfilter.cpp
