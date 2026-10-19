@@ -44,7 +44,9 @@
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QTextBlock>
+#include <QTextDocument>
 #include <QTextEdit>
+#include <QTextOption>
 #include <QThread>
 #include <QTimer>
 
@@ -82,6 +84,16 @@ QNVimCore::QNVimCore(QObject *parent)
     connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
             this, &QNVimCore::editorOpened);
 
+    // Neovim's 'wrap' option and Qt Creator's "Enable text wrapping" setting
+    // are kept in sync, so that both describe the same editors. Neovim's own
+    // value is applied to the editors (and the setting) as soon as it is read
+    // for the first time; reading the setting here makes sure it was loaded
+    // from Qt Creator's settings before the connection, so loading cannot
+    // look like a change later.
+    mWrapSetting = TextEditor::displaySettings().textWrapping();
+    connect(&TextEditor::displaySettings(), &TextEditor::DisplaySettings::changed,
+            this, &QNVimCore::wrapSettingChanged);
+
     mNumbersColumn = new NumbersColumn();
     // Prevent inheriting parent Neovim's socket when Qt Creator is launched from inside Neovim
     // (e.g. via :terminal or opencode running inside nvim). The child nvim would otherwise
@@ -90,7 +102,14 @@ QNVimCore::QNVimCore(QObject *parent)
     QByteArray oldListen = qgetenv("NVIM_LISTEN_ADDRESS");
     qunsetenv("NVIM");
     qunsetenv("NVIM_LISTEN_ADDRESS");
-    mNVim = NeovimQt::NeovimConnector::spawn({"--cmd", "let g:QNVIM=1"});
+    QStringList nvimArgs{"--cmd", "let g:QNVIM=1"};
+    // Dev hook: QNVIM_LISTEN=<path> also makes the spawned Neovim listen on that
+    // socket, so its own view can be inspected while qnvim runs, e.g.
+    //   nvim --server <path> --remote-expr 'line(".")'
+    const QByteArray listenAddress = qgetenv("QNVIM_LISTEN");
+    if (!listenAddress.isEmpty())
+        nvimArgs << "--listen" << QString::fromLocal8Bit(listenAddress);
+    mNVim = NeovimQt::NeovimConnector::spawn(nvimArgs);
     if (!oldNvim.isEmpty())
         qputenv("NVIM", oldNvim);
     if (!oldListen.isEmpty())
@@ -256,6 +275,113 @@ QString QNVimCore::filename(Core::IEditor *editor) const {
     return filename;
 }
 
+// The text columns the editor shows in its viewport. Qt Creator wraps its
+// lines in PlainTextDocumentLayout::layoutBlock(), which lays the text out in
+// the viewport width minus the document margin on both sides and minus one
+// more character: the editor always enables the "add space for line and
+// paragraph separators" option, which reserves room for the paragraph mark.
+// Neovim has to wrap at the same columns, or the rows of its window are not
+// the rows of the editor (the cursor then lands off the row it is on).
+static int textColumns(const TextEditor::TextEditorWidget *textEditor) {
+    const QTextDocument *document = textEditor->document();
+    QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
+    const qreal advance = fm.horizontalAdvance('A');
+    if (advance <= 0)
+        return 0;
+
+    qreal width = textEditor->viewport()->width() - 2 * document->documentMargin();
+    if (document->defaultTextOption().flags() & QTextOption::AddSpaceForLineAndParagraphSeparators)
+        width -= fm.horizontalAdvance(QChar(0x21B5));
+
+    // Qt fits characters with 1/64th pixel precision (QFixed); the same
+    // arithmetic gives the same count at the boundaries.
+    const int cell = qRound(advance * 64);
+    if (cell <= 0)
+        return 0;
+
+    return qMax(0, qRound(width * 64)) / cell;
+}
+
+// The editor keeps a run of spaces that straddles a wrap point at the end of
+// the previous row (Neovim starts the next row with those spaces). A position
+// that Neovim considers the first cell of a row is then drawn at the end of the
+// previous row, one row above the one it belongs to. Returns the first position
+// the editor draws at the start of that row, so that the cursor shows up on the
+// row Neovim's cursor is on. Neovim's own position is not involved: this only
+// decides where the editor's cursor is put.
+static int drawnRowStartPosition(const TextEditor::TextEditorWidget *textEditor, int position, int columns) {
+    if (columns <= 0)
+        return position;
+
+    const QTextBlock block = textEditor->document()->findBlock(position);
+    if (!block.isValid())
+        return position;
+
+    // Neovim's rows are its cells: only a position at a multiple of the
+    // columns starts one. The block's first position starts a row in both
+    // models, so it is left alone.
+    const auto tabs = textEditor->textDocument()->tabSettings();
+    const int column = tabs.columnAt(block.text(), position - block.position());
+    if (column <= 0 or column % columns)
+        return position;
+
+    auto rowOf = [textEditor, &block](int pos) {
+        QTextCursor cursor(block);
+        cursor.setPosition(pos);
+        return textEditor->cursorRect(cursor).top();
+    };
+
+    const int top = rowOf(position);
+    if (top != rowOf(position - 1))
+        return position; // the editor draws this position at the start of a row
+
+    // The first position the editor draws on the next row; a run of spaces it
+    // kept on this row starts that row in Neovim.
+    const int end = qMin(block.position() + block.length(), position + columns);
+    for (int next = position + 1; next < end; ++next) {
+        if (rowOf(next) != top)
+            return next;
+    }
+
+    return position;
+}
+
+// Sets how an editor wraps its lines: with Neovim's 'wrap' on it wraps at any
+// character (Neovim breaks at the cell it runs out of room at, not at a word
+// boundary), with 'wrap' off it does not wrap at all.
+//
+// Qt keeps the mode in two places: the editor widget (QPlainTextEdit::
+// wordWrapMode()) and the text document, and the layout wraps by the document's
+// mode. Editors of one document (the halves of a Qt Creator split, ...) share
+// the document, and a new editor for a document resets the document's mode to
+// Qt's default (break at word boundaries) when it attaches to it. The widget's
+// own value then says nothing about the mode that is in effect, so both have to
+// be set.
+static void applyWrapMode(Core::IEditor *editor, bool wrap) {
+    if (!editor)
+        return;
+
+    auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
+    if (!textEditor)
+        return;
+
+    const QTextOption::WrapMode mode = wrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap;
+
+    QTextDocument *document = textEditor->document();
+
+    textEditor->setLineWrapMode(wrap ? Utils::PlainTextEdit::WidgetWidth
+                                     : Utils::PlainTextEdit::NoWrap);
+
+    if (textEditor->wordWrapMode() != mode)
+        textEditor->setWordWrapMode(mode); // also sets the document's mode
+
+    if (document->defaultTextOption().wrapMode() != mode) {
+        QTextOption option = document->defaultTextOption();
+        option.setWrapMode(mode);
+        document->setDefaultTextOption(option);
+    }
+}
+
 void QNVimCore::fixSize(Core::IEditor *editor) {
     if (!editor) {
         return;
@@ -271,12 +397,97 @@ void QNVimCore::fixSize(Core::IEditor *editor) {
     QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
 
     // -1 is for the visual white spaces that Qt Creator adds (whether it renders them or not)
-    // TODO: after ext_columns is implemented in neovim +6 should be removed
-    const int width = qFloor(textEditor->viewport()->width() / fm.horizontalAdvance('A')) - 1 + 6;
+    const int width = qFloor(textEditor->viewport()->width() / fm.horizontalAdvance('A')) - 1;
     const int height = qFloor(textEditor->height() / fm.lineSpacing());
 
     if (width != mWidth or height != mHeight)
         mNVim->api6()->nvim_ui_try_resize_grid(1, width, height);
+
+    // The window the editor is shown in must wrap its lines where the editor
+    // wraps them; the size of the window's own grid decides that.
+    const int win = windowForEditor(editor);
+    auto windowState = mWindows.find(win);
+    if (!win)
+        return;
+
+    if (windowState == mWindows.end() or windowState.value().textoff < 0)
+        refreshWindowSizes(); // learns the external columns, then sizes the grid
+    else
+        resizeWindow(win);
+}
+
+void QNVimCore::resizeWindow(int win) {
+    auto it = mWindows.find(win);
+    if (it == mWindows.end())
+        return;
+
+    WindowState &st = *it;
+    if (!st.bound or !st.editor or !st.grid or !mNVim or !mNVim->isReady())
+        return;
+
+    if (st.textoff < 0)
+        return; // the grid cannot be sized correctly before the columns are known
+
+    auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(st.editor->widget());
+    if (!textEditor)
+        return;
+
+    QFontMetricsF fm(textEditor->textDocument()->fontSettings().font());
+
+    // The grid holds the text columns of the editor (Neovim wraps the window
+    // at those) plus the window's external columns (line numbers, sign and
+    // fold columns, 'statuscolumn'), which are not part of the text.
+    const int columns = textColumns(textEditor);
+    const int rows = qFloor(textEditor->height() / fm.lineSpacing());
+    const int width = columns + st.textoff;
+
+    if (columns <= 0 or rows <= 0 or (width == st.gridWidth and rows == st.gridHeight))
+        return;
+
+    st.gridWidth = width;
+    st.gridHeight = rows;
+    mNVim->api6()->nvim_ui_try_resize_grid(st.grid, width, rows);
+}
+
+void QNVimCore::refreshWindowSizes() {
+    if (!mNVim or !mNVim->isReady() or mRefreshingWindowSizes)
+        return;
+
+    mRefreshingWindowSizes = true;
+    // getwininfo() gives each window's external columns ('textoff') and its
+    // number of lines; 'wrap' has to come with them so that every window's
+    // editor can wrap as its window does (an editor that was never the current
+    // one has not heard from syncFromVim() yet).
+    auto request = mNVim->api2()->nvim_eval(
+        QByteArrayLiteral("map(getwininfo(), {_, w -> extend(w, "
+                          "{'qnvim_wrap': getwinvar(w.winid, '&wrap')})})"));
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [=, this](quint32, quint64, const QVariant &error) {
+        mRefreshingWindowSizes = false;
+        qWarning(Main) << "Could not read the size of the Neovim windows:" << error;
+    });
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [=, this](quint32, quint64, const QVariant &result) {
+        // The external columns of a window are part of its grid: without them
+        // the grid would be too narrow and Neovim would wrap too early (the
+        // window's text must fill its editor view).
+        for (const QVariant &entry : result.toList()) {
+            const QVariantMap info = entry.toMap();
+            auto windowState = mWindows.find(info.value("winid").toInt());
+            if (windowState != mWindows.end()) {
+                windowState.value().textoff = info.value("textoff").toInt();
+                if (windowState.value().bound)
+                    applyWrapMode(windowState.value().editor, info.value("qnvim_wrap").toBool());
+            }
+        }
+
+        for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
+            if (it.value().bound)
+                resizeWindow(it.key());
+        }
+
+        mRefreshingWindowSizes = false;
+    });
 }
 
 int QNVimCore::bufferForEditor(Core::IEditor *editor) const {
@@ -302,6 +513,23 @@ QWidget *QNVimCore::editorViewWidget(Core::IEditor *editor) const {
     QWidget *widget = editor ? editor->widget() : nullptr;
     QWidget *stack = widget ? widget->parentWidget() : nullptr;
     return stack ? stack->parentWidget() : nullptr;
+}
+
+Core::IEditor *QNVimCore::editorForWidget(QObject *object) const {
+    if (!object)
+        return nullptr;
+
+    QWidget *widget = qobject_cast<QWidget *>(object);
+    for (Core::IEditor *editor : mBuffers.keys()) {
+        QWidget *editorWidget = editor ? editor->widget() : nullptr;
+        if (!editorWidget)
+            continue;
+
+        if (editorWidget == widget or editorWidget->isAncestorOf(widget))
+            return editor;
+    }
+
+    return nullptr;
 }
 
 int QNVimCore::windowForView(QWidget *view) const {
@@ -363,6 +591,14 @@ void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
     st.cursorLine = st.cursorCol = st.vCursorLine = st.vCursorCol = 0;
     st.topline = st.pendingTopline = 0;
     mNewWindows.remove(win);
+
+    // The view the window is represented by decides how wide the window's text
+    // is; a window not seen by qnvim before has to be asked Neovim for its
+    // external columns first (see resizeWindow()).
+    if (st.grid and st.textoff < 0)
+        refreshWindowSizes();
+    else
+        resizeWindow(win);
 }
 
 void QNVimCore::activateWindowEditor(int win) {
@@ -762,8 +998,6 @@ void QNVimCore::reconcileWindows() {
             QString filename;
             int row = 0;
             int col = 0;
-            int width = 0;
-            int height = 0;
             int tab = 0;
         };
         QList<WindowInfo> windows;
@@ -779,8 +1013,6 @@ void QNVimCore::reconcileWindows() {
             window.filename = info[2].toString();
             window.row = info[3].toInt();
             window.col = info[4].toInt();
-            window.width = info[5].toInt();
-            window.height = info[6].toInt();
             window.tab = info[7].toInt();
             if (!window.win)
                 continue;
@@ -831,32 +1063,35 @@ void QNVimCore::reconcileWindows() {
                     bool candidateSideBySide = false;
                     bool candidateBefore = false;
                     int distance = -1;
-                    if (source.row == window.row and source.height == window.height) {
+                    // A window's grid is sized to its editor view (see
+                    // resizeWindow()), so its width and height are those of
+                    // that view, not of the space it occupies in Neovim's
+                    // layout; only its position is the layout's. Windows side
+                    // by side in the layout are in the same row and differ in
+                    // the column, stacked ones are in the same column and
+                    // differ in the row; on either side, the nearest one is
+                    // the window the new one is next to.
+                    if (source.row == window.row and source.col != window.col) {
                         candidateSideBySide = true;
-                        if (source.col + source.width <= window.col) {
+                        if (source.col < window.col) {
                             // The source is left of the new window.
                             candidateBefore = false;
-                            distance = window.col - (source.col + source.width);
-                        } else if (window.col + window.width <= source.col) {
+                            distance = window.col - source.col;
+                        } else {
                             // The source is right of the new window.
                             candidateBefore = true;
-                            distance = source.col - (window.col + window.width);
-                        } else {
-                            continue; // they overlap: not next to each other
+                            distance = source.col - window.col;
                         }
-                    } else if (source.col == window.col
-                               and source.width == window.width) {
+                    } else if (source.col == window.col and source.row != window.row) {
                         candidateSideBySide = false;
-                        if (source.row + source.height <= window.row) {
+                        if (source.row < window.row) {
                             // The source is above the new window.
                             candidateBefore = false;
-                            distance = window.row - (source.row + source.height);
-                        } else if (window.row + window.height <= source.row) {
+                            distance = window.row - source.row;
+                        } else {
                             // The source is below the new window.
                             candidateBefore = true;
-                            distance = source.row - (window.row + window.height);
-                        } else {
-                            continue;
+                            distance = source.row - window.row;
                         }
                     } else {
                         continue;
@@ -1226,8 +1461,17 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
         textEditor->setMultiTextCursor(mtc);
     } else {
         QTextCursor cursor = textEditor->textCursor();
+
+        // Spaces the editor kept at the end of the previous row start this row
+        // in Neovim: show the cursor on the row it belongs to. st.cursorCol has
+        // to record where the cursor is drawn, or syncCursorToVim() would send
+        // this position back (Neovim keeps its own position).
+        const int drawn = drawnRowStartPosition(textEditor, position, textColumns(textEditor));
+        if (drawn != position)
+            st.cursorCol = mText.left(drawn).section('\n', -1).toUtf8().length() + 1;
+
         cursor.clearSelection();
-        cursor.setPosition(position);
+        cursor.setPosition(drawn);
 
         if (textEditor->textCursor().position() != cursor.position() or
             textEditor->textCursor().hasSelection())
@@ -1281,6 +1525,25 @@ void QNVimCore::syncToVim(Core::IEditor *editor, std::function<void()> callback)
         callback();
 }
 
+void QNVimCore::wrapSettingChanged() {
+    const bool wrap = TextEditor::displaySettings().textWrapping();
+    if (wrap == mWrapSetting)
+        return; // another display setting changed
+
+    mWrapSetting = wrap;
+
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    // The setting is for all editors, so all Neovim windows follow it (and,
+    // through the global value, the ones created later). Each editor follows
+    // its own window as usual.
+    mNVim->api2()->nvim_command(wrap ? QByteArrayLiteral("setglobal wrap")
+                                     : QByteArrayLiteral("setglobal nowrap"));
+    mNVim->api2()->nvim_command(wrap ? QByteArrayLiteral("tabdo windo setlocal wrap")
+                                     : QByteArrayLiteral("tabdo windo setlocal nowrap"));
+}
+
 void QNVimCore::syncFromVim() {
     auto editor = Core::EditorManager::currentEditor();
 
@@ -1294,10 +1557,10 @@ void QNVimCore::syncFromVim() {
     unsigned long long syncCounter = ++mSyncCounter;
 
     auto request = mNVim->api2()->nvim_eval(
-        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0')]");
+        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0'), get(get(getwininfo(win_getid()), 0, {}), 'textoff', -1)]");
     connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
-        if (state.size() < 11)
+        if (state.size() < 12)
             return;
 
         if (mSyncCounter != syncCounter)
@@ -1325,8 +1588,19 @@ void QNVimCore::syncFromVim() {
         mNumbersColumn->setNumber(mNumber);
         mNumbersColumn->setEditor(mRelativeNumber ? textEditor : nullptr);
 
-        if (textEditor->wordWrapMode() != (mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap))
-            textEditor->setWordWrapMode(mWrap ? QTextOption::WrapAnywhere : QTextOption::NoWrap);
+        // Neovim's 'wrap' decides whether the editor wraps its lines and where
+        // it breaks them.
+        applyWrapMode(editor, mWrap);
+
+        // Neovim's 'wrap' option is shared with Qt Creator's "Enable text
+        // wrapping" setting, which follows the window here. Writing it quietly
+        // leaves the editors of the other windows alone: they follow their own
+        // Neovim windows.
+        TextEditor::DisplaySettings &displaySettings = TextEditor::displaySettings();
+        if (displaySettings.textWrapping() != mWrap) {
+            mWrapSetting = mWrap;
+            displaySettings.textWrapping.setValue(mWrap, Utils::BaseAspect::BeQuiet);
+        }
 
         // Neovim's window viewport may have been scrolled without the cursor having moved,
         // e.g. by `zz`, `zt`, `zb`, `<C-e>` or `<C-y>`. Remember the new top line, so that
@@ -1337,6 +1611,17 @@ void QNVimCore::syncFromVim() {
             if (topline > 0 and topline != st.topline) {
                 st.topline = topline;
                 st.pendingTopline = topline;
+            }
+
+            // The window's external columns (line numbers, sign and fold
+            // columns, 'statuscolumn') changed, e.g. by `:set number`,
+            // `:set signcolumn=yes` or a sign appearing: the window text
+            // area no longer fills the editor view, so every window's grid
+            // has to be sized to its view again.
+            const int textoff = state.value(11).toInt();
+            if (textoff >= 0 and st.textoff != textoff) {
+                st.textoff = textoff;
+                refreshWindowSizes();
             }
         }
 
@@ -1460,10 +1745,35 @@ bool QNVimCore::eventFilter(QObject *object, QEvent *event) {
         qobject_cast<QPlainTextEdit *>(object) ||
         qobject_cast<Utils::PlainTextEdit *>(object)) {
         if (event->type() == QEvent::Resize) {
+            // The resized widget belongs to the view whose window it
+            // represents; the editor may be closed before the timer fires.
+            const QPointer<Core::IEditor> editorGuard = editorForWidget(object);
             QTimer::singleShot(100, this, [=, this]() {
-                fixSize(Core::EditorManager::currentEditor());
+                fixSize(editorGuard ? editorGuard.data() : Core::EditorManager::currentEditor());
             });
             return false;
+        }
+    }
+
+    // The text area of an editor is its viewport, not the editor widget: the
+    // viewport changes size without the widget being resized when the extra
+    // area (line numbers, marks, folding markers) gets wider or narrower, or
+    // when a scrollbar appears. The editor wraps its text in the viewport, so
+    // the window's grid has to follow the viewport as well.
+    if (auto *objectWidget = qobject_cast<QWidget *>(object)) {
+        if (Core::IEditor *objectEditor = editorForWidget(objectWidget)) {
+            auto *objectTextEditor
+                = qobject_cast<TextEditor::TextEditorWidget *>(objectEditor->widget());
+            if (objectTextEditor and objectTextEditor->viewport() == objectWidget) {
+                if (event->type() == QEvent::Resize) {
+                    const QPointer<Core::IEditor> editorGuard = objectEditor;
+                    QTimer::singleShot(100, this, [=, this]() {
+                        if (editorGuard)
+                            fixSize(editorGuard.data());
+                    });
+                    return false;
+                }
+            }
         }
     }
 
@@ -1586,6 +1896,11 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
 
     widget->setAttribute(Qt::WA_KeyCompression, false);
     widget->installEventFilter(this);
+    // The text area of the editor can change size without the editor widget
+    // being resized (see eventFilter(): the extra area, a scrollbar), so the
+    // viewport has to be watched as well.
+    if (QWidget *viewport = textEditor->viewport())
+        viewport->installEventFilter(this);
 
     attachEditorToWindow(editor);
 
@@ -1768,6 +2083,9 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 // Qt Creator (the window may not have a view yet).
                 if (!mInhibitWindowSync)
                     activateWindowEditor(win);
+                // A window that just became visible (e.g. in a tabpage that
+                // was entered) can be sized to its view now.
+                resizeWindow(win);
             } else if (event == "WinClosed") {
                 if (mClosingWindows.remove(win))
                     return; // qnvim closed the window (its editor view is gone)
@@ -1955,7 +2273,35 @@ void QNVimCore::redraw(const QVariantList &args) {
             flush = true;
 
         if (command == "win_pos") {
-            qDebug(Main) << line;
+            // ["win_pos", grid, win, start_row, start_col, width, height]: the
+            // window's grid and its position in Neovim's layout. The grid is
+            // what gets resized to the editor view (see resizeWindow()).
+            if (args.size() >= 2) {
+                const int grid = args[0].toInt();
+                const int win = args[1].toInt();
+                if (grid and win) {
+                    WindowState &st = mWindows[win];
+                    if (st.grid != grid) {
+                        st.grid = grid;
+                        st.gridWidth = st.gridHeight = 0;
+                        resizeWindow(win);
+                    }
+                }
+            }
+        } else if (command == "win_viewport") {
+            // ["win_viewport", grid, win, ...]: also tells which grid the
+            // window is drawn in, for windows whose win_pos is old (e.g. a
+            // window qnvim did not see when its layout was last reported).
+            if (args.size() >= 2) {
+                const int grid = args[0].toInt();
+                const int win = args[1].toInt();
+                auto windowState = mWindows.find(win);
+                if (grid and windowState != mWindows.end() and windowState.value().grid != grid) {
+                    windowState.value().grid = grid;
+                    windowState.value().gridWidth = windowState.value().gridHeight = 0;
+                    resizeWindow(win);
+                }
+            }
         } else if (command == "win_float_pos") {
             qDebug(Main) << line;
         } else if (command == "win_hide") {
@@ -1975,9 +2321,10 @@ void QNVimCore::redraw(const QVariantList &args) {
         } else if (command == "mouse_off") {
             mMouse = false;
         } else if (command == "grid_resize") {
-            if (line.first().toInt() == 1) {
-                mWidth = args[0].toInt();
-                mHeight = args[1].toInt();
+            // ["grid_resize", grid, width, height]
+            if (args.size() >= 3 and args[0].toInt() == 1) {
+                mWidth = args[1].toInt();
+                mHeight = args[2].toInt();
             }
         } else if (command == "default_colors_set") {
             qint64 val = args[0].toLongLong();

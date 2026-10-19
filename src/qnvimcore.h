@@ -43,6 +43,15 @@ class QNVimCore : public QObject {
     QString filename(Core::IEditor * = nullptr) const;
 
     void fixSize(Core::IEditor * = nullptr);
+    // Neovim -> Qt Creator: make the window's grid exactly as big as the text
+    // area of the editor view that represents the window, so that Neovim wraps
+    // lines where the editor wraps them and scrolls by the same amount of
+    // lines. The width every window's grid needs for its external columns is
+    // read from Neovim first (see refreshWindowSizes()).
+    void resizeWindow(int win);
+    // Read every window's external columns from Neovim, then size the grid of
+    // every bound window (see resizeWindow()).
+    void refreshWindowSizes();
     void syncCursorToVim(Core::IEditor * = nullptr);
     void syncSelectionToVim(Core::IEditor * = nullptr);
     void syncModifiedToVim(Core::IEditor * = nullptr);
@@ -97,11 +106,30 @@ class QNVimCore : public QObject {
         // be applied to the editor (0 while there is none).
         int topline = 0;
         int pendingTopline = 0;
+        // The grid Neovim draws the window in (0 while unknown; see the
+        // win_pos/win_viewport events). Only a grid known to qnvim can be
+        // sized to the editor view the window is represented by.
+        int grid = 0;
+        // The width of the window's external columns (line numbers, sign and
+        // fold columns, 'statuscolumn'). They are part of the grid, not of the
+        // text: for the text to fill the view, the grid must be that many
+        // columns wider than the view (-1 while unknown).
+        int textoff = -1;
+        // The size last requested for the grid, to not request it again.
+        int gridWidth = 0;
+        int gridHeight = 0;
     };
 
     // The buffer of the editor, or of another editor that shares its document
     // (a document is shown by a single Neovim buffer).
     int bufferForEditor(Core::IEditor *) const;
+
+    // The editor whose widget is `object` (or contains it).
+    Core::IEditor *editorForWidget(QObject *object) const;
+
+    // Qt Creator's "Enable text wrapping" setting changed: Neovim follows it
+    // (see syncFromVim() for the other direction).
+    void wrapSettingChanged();
 
     QWidget *editorViewWidget(Core::IEditor *) const;
     int windowForView(QWidget *) const;
@@ -176,6 +204,12 @@ class QNVimCore : public QObject {
     int mCurrentWindow = 0;
     // Whether the windows may have to be reconciled with Qt Creator's views.
     bool mWindowsDirty = true;
+    // True while the external columns of the windows are being read from
+    // Neovim (see refreshWindowSizes()).
+    bool mRefreshingWindowSizes = false;
+    // Qt Creator's "Enable text wrapping" setting as last seen; it is kept in
+    // sync with Neovim's 'wrap' option (see syncFromVim()).
+    bool mWrapSetting = false;
 
     // The editor view a Neovim window is being created for: the window that
     // appears for it is tied to that view (instead of being mistaken for a

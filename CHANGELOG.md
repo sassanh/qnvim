@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file. This projec
 
 - Sync the editor viewport with Neovim's window: commands that scroll Neovim's window without moving the cursor (`zz`, `zt`, `zb`, `<C-e>`, `<C-y>`, `<C-d>`, `<C-u>`, `H`, `M`, `L`, ...) used to leave the Qt Creator editor view where it was, so they appeared to do nothing. The editor is now scrolled to Neovim's top line ([#15](https://github.com/sassanh/qnvim/issues/15)).
 
+- `set wrap` works: Neovim now wraps lines where the Qt Creator editor wraps them, so `gj`/`gk` (and `j`/`k` with `'wrap'`) land on the visual line you see, instead of up to six columns off. Every window's text area is kept as wide as the editor view that shows it, and it follows along when windows are resized or when the line number and sign columns appear or disappear ([#4](https://github.com/sassanh/qnvim/issues/4)). When a wrap point falls on a space, the editor keeps that space at the end of the previous row (Neovim starts the next row with it), so in that case the cursor is now shown on the first character of the row it belongs to instead of at the end of the previous one. The editors also wrap by the mode of their document now, which the two halves of a Qt Creator split share: a new editor resets that mode to Qt's default (breaking at word boundaries), which used to leave the editors wrapping differently from Neovim until one of them became the current window.
+
 - Help pages (`:help`) work and show their content: their editors used to crash Qt Creator (`std::bad_function_call`, the factory for them was missing its document creator) and the autocommand that was supposed to read the help files could never run, because qnvim's `BufReadCmd` autocommand suppresses Neovim's file reading. Help and terminal buffers now get proper plain text editors and the help files are read on Neovim's side.
 
 - Closing one of two editors that show the same Neovim buffer (e.g. the two halves of a Qt Creator split) no longer deletes that buffer in Neovim: the remaining editor now takes the buffer over instead of losing it.
@@ -25,6 +27,8 @@ All notable changes to this project will be documented in this file. This projec
 - The Neovim command line in the editor view no longer keeps showing an old command or message: it is now cleared and hidden when Neovim clears its message.
 
 **Changed**
+
+- Qt Creator's "Enable text wrapping" setting (Text Editor → Display) and Neovim's `wrap` option are now kept in sync: changing either one changes the other, so the editor's wrapping always agrees with Neovim. The setting follows the current window's option, while toggling the setting applies it to all Neovim windows (and to windows created later).
 
 - The Neovim command line now lives in the editor view, like Neovim's own command line, instead of in Qt Creator's status bar: it is easier to notice, longer commands fit and Neovim messages are shown in full and can be scrolled. This finishes the per-editor command line widget by Mikhail Zolotukhin from [#57](https://github.com/sassanh/qnvim/pull/57), which was present in the code but never wired up ([#56](https://github.com/sassanh/qnvim/issues/56)).
 
