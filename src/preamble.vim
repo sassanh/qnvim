@@ -31,7 +31,7 @@ execute "autocmd BufHidden * nested :call rpcnotify(g:neovim_channel, 'Gui', 'fi
 execute "autocmd BufWipeout * nested :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)"
 function! SetCursor(line, col)
     call cursor(a:line, a:col)
-    if mode()[0] ==# 'i' or mode()[0] ==# 'R'
+    if mode()[0] ==# 'i' || mode()[0] ==# 'R'
         execute "normal! i\<C-G>u\<C-c>"
     endif
     call cursor(a:line, a:col)

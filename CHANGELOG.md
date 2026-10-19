@@ -28,6 +28,8 @@ All notable changes to this project will be documented in this file. This projec
 
 - The Neovim command line in the editor view no longer keeps showing an old command or message: it is now cleared and hidden when Neovim clears its message.
 
+- Cursor synchronizing from the editor side works with current Neovim: `SetCursor()` tested the mode with the `or` operator, which Neovim's expression parser rejects (`E488: Trailing characters: or ...`), so every cursor movement in a Qt Creator editor errored in Neovim.
+
 **Changed**
 
 - Qt Creator's "Enable text wrapping" setting (Text Editor → Display) and Neovim's `wrap` option are now kept in sync: changing either one changes the other, so the editor's wrapping always agrees with Neovim. The setting follows the current window's option, while toggling the setting applies it to all Neovim windows (and to windows created later).
