@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- `./quick-run.sh` runs the development loop in one command: it configures and builds the plugin, installs it into the Qt Creator downloaded under `external/qtcreator/` (retargeting it to the bundled Qt on macOS), stops a running instance and starts it with qnvim's logging enabled.
+
 - Splits/windows support: Neovim's `:split`, `:vsplit` and any other window now show up as Qt Creator splits in the same arrangement as in Neovim (each one keeps its own file, cursor and viewport), and Qt Creator's own splits become Neovim windows. Closing a Neovim window removes its Qt Creator split; closing a split (or closing the last editor in it) closes its Neovim window ([#3](https://github.com/sassanh/qnvim/issues/3)). Known limitations: split sizes are not synced between the two, unnamed/scratch buffers get no editor, and Neovim tabpages are shown as splits in the same editor area.
 
 - Floating windows (completion menus, hover popups, `fzf-lua`/`telescope` pickers, the dashboard, ...) are shown: each one appears as an overlay in Qt Creator's main window, with the text, colors and attributes Neovim reports for it. The main window is Neovim's screen, so a float Neovim anchors to the screen (the common picker or the dashboard, e.g.) is centered in it like in Neovim; a float anchored to a window — or one a plugin opened at the cursor's or the cmdline's cell of the editor's layout (`screenpos()`, nvim-cmp's menus) — is placed in the editor view that window is shown in, at the cursor or above the editor view's command line. The overlays are just views: they never take the keyboard focus and let the mouse through, so keys and clicks keep reaching Neovim.

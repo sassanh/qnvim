@@ -12,7 +12,11 @@ Qt Creator sources are fine to read; do not link private headers.
 The test Qt Creator lives in `external/qtcreator/dist-Darwin-20.0.1/` (not
 committed; its version must match `external/qtcreator/version.cmake`). The
 build here uses Homebrew Qt, whose frameworks are linked by absolute path, so
-every rebuild must be retargeted before the plugin can load:
+every rebuild must be retargeted before the plugin can load.
+
+`./quick-run.sh` does the whole loop below (configure, build, retarget, install,
+restart the test Qt Creator with `qtcreator.plugin.qnvim.*=true`). The manual
+commands remain here for when it fails or a variation is needed:
 
 ```sh
 cmake --build build --target QNVim -j8

@@ -49,6 +49,15 @@ Go to the releases section and download the version of the plugin matching your 
 
 > **Note (macOS):** when the plugin loads, it resolves Qt from the Qt Creator it is installed into, so it can be built with a Qt newer than the version listed above as long as it's an official Qt build (Qt installer or [aqt](https://github.com/miurahr/aqtinstall)). Qt builds that link their libraries by absolute path (e.g. Homebrew's) produce plugins that fail to load with a symbol error; for those, `tools/RetargetPluginQt.sh` can fix up an already-built plugin (see the comments at the top of the script).
 
+#### Running a development build
+
+`quick-run.sh` runs the whole loop for you on macOS and Linux: it configures and builds the plugin, installs it into the Qt Creator downloaded under `external/qtcreator/` (retargeting it to the Qt bundled in Qt Creator on macOS), stops a running instance and starts it with qnvim's logging enabled.
+
+```sh
+./quick-run.sh                     # build and run
+./quick-run.sh src/qnvimcore.cpp   # build, run and open a file
+```
+
 #### Updating
 
 Before updating from source, delete the `build` directory from earlier to avoid problems such as [this](https://github.com/sassanh/qnvim/issues/8#issuecomment-485456543).
