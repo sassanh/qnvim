@@ -2,6 +2,7 @@
 
 #include <texteditor/fontsettings.h>
 #include <texteditor/textdocument.h>
+#include <texteditor/textdocumentlayout.h>
 #include <texteditor/texteditor.h>
 #include <texteditor/texteditorsettings.h>
 
@@ -9,6 +10,7 @@
 
 #include <QPainter>
 #include <QScrollBar>
+#include <QTextBlock>
 
 namespace QNVim {
 namespace Internal {
@@ -35,6 +37,15 @@ void NumbersColumn::setEditor(TextEditor::TextEditorWidget *editor) {
                    this, &NumbersColumn::updateGeometry);
         disconnect(mEditor->document(), &QTextDocument::contentsChanged,
                    this, &NumbersColumn::updateGeometry);
+        disconnect(mEditor, &Utils::PlainTextEdit::blockCountChanged,
+                   this, &NumbersColumn::updateGeometry);
+        disconnect(mEditor->textDocument(), &TextEditor::TextDocument::fontSettingsChanged,
+                   this, &NumbersColumn::updateGeometry);
+        if (auto layout = qobject_cast<TextEditor::TextDocumentLayout *>(
+                mEditor->document()->documentLayout())) {
+            disconnect(layout, &TextEditor::TextDocumentLayout::updateExtraArea,
+                       this, &NumbersColumn::updateGeometry);
+        }
     }
 
     mEditor = editor;
@@ -48,6 +59,15 @@ void NumbersColumn::setEditor(TextEditor::TextEditorWidget *editor) {
                 this, &NumbersColumn::updateGeometry);
         connect(mEditor->document(), &QTextDocument::contentsChanged,
                 this, &NumbersColumn::updateGeometry);
+        connect(mEditor, &Utils::PlainTextEdit::blockCountChanged,
+                this, &NumbersColumn::updateGeometry);
+        connect(mEditor->textDocument(), &TextEditor::TextDocument::fontSettingsChanged,
+                this, &NumbersColumn::updateGeometry);
+        if (auto layout = qobject_cast<TextEditor::TextDocumentLayout *>(
+                mEditor->document()->documentLayout())) {
+            connect(layout, &TextEditor::TextDocumentLayout::updateExtraArea,
+                    this, &NumbersColumn::updateGeometry);
+        }
         show();
     } else
         hide();
@@ -64,55 +84,48 @@ void NumbersColumn::paintEvent(QPaintEvent *event) {
     if (not mEditor)
         return;
 
-    QTextCursor firstVisibleCursor = mEditor->cursorForPosition(QPoint(0, 0));
-    QTextBlock firstVisibleBlock = firstVisibleCursor.block();
-
-    if (firstVisibleCursor.positionInBlock() > 0) {
-        firstVisibleBlock = firstVisibleBlock.next();
-        firstVisibleCursor.setPosition(firstVisibleBlock.position());
-    }
-
-    QTextBlock block = mEditor->textCursor().block();
-    bool forward = firstVisibleBlock.blockNumber() > block.blockNumber();
-    int n = 0;
-
-    while (block.isValid() and block != firstVisibleBlock) {
-        block = forward ? block.next() : block.previous();
-
-        if (block.isVisible())
-            n += forward ? 1 : -1;
-    }
+    const int currentLine = mEditor->textCursor().block().blockNumber();
 
     QPainter p(this);
     QPalette pal = mEditor->extraArea()->palette();
-    const QColor fg = pal.color(QPalette::WindowText);
+    pal.setCurrentColorGroup(QPalette::Active);
+    const QColor fg = pal.color(QPalette::Dark);
     const QColor bg = pal.color(QPalette::Window);
-    p.setPen(fg);
+    const bool coverNativeNumbers = mEditor->lineNumbersVisible();
+    const int fallbackLineHeight = mEditor->extraArea()->fontMetrics().lineSpacing();
+    const int lastVisibleLine = mEditor->lastVisibleBlockNumber();
 
-    qreal lineHeight = block.layout()->boundingRect().height();
-    QRectF rect(0, mEditor->cursorRect(firstVisibleCursor).y(), width(), lineHeight);
-    bool hideLineNumbers = mEditor->lineNumbersVisible();
+    // Ask the editor for each line's cursor rect, as TextEditorWidget does when
+    // it paints its own line numbers: the rect is on the first visual row of
+    // the block, so wrapped lines, folds and the partially visible top line
+    // stay aligned with the text.
+    for (int lineNumber = mEditor->firstVisibleBlockNumber(); lineNumber <= lastVisibleLine;
+         ++lineNumber) {
+        const QTextBlock block = mEditor->document()->findBlockByNumber(lineNumber);
+        if (not block.isValid())
+            break;
+        if (not block.isVisible())
+            continue;
 
-    while (block.isValid()) {
-        if (block.isVisible()) {
-            if ((not mNumber or n != 0) and rect.intersects(event->rect())) {
-                const int line = qAbs(n);
-                const QString number = QString::number(line);
+        const QRect cursorRect = mEditor->cursorRect(QTextCursor(block));
+        const int lineHeight = cursorRect.height() > 0 ? cursorRect.height() : fallbackLineHeight;
+        const QRectF rect(0, cursorRect.top(), width(), lineHeight);
 
-                if (hideLineNumbers)
-                    p.fillRect(rect, bg);
-                if (hideLineNumbers or line < 100)
-                    p.drawText(rect, Qt::AlignRight | Qt::AlignVCenter, number);
-            }
+        if (rect.bottom() < 0 or not rect.intersects(event->rect()))
+            continue;
 
-            rect.translate(0, lineHeight * block.lineCount());
-            if (rect.y() > height())
-                break;
+        const int relativeLine = block.blockNumber() - currentLine;
+        const bool current = relativeLine == 0;
+        const QString number = current
+            ? QString::number(mNumber ? block.blockNumber() + 1 : 0)
+            : QString::number(qAbs(relativeLine));
 
-            ++n;
-        }
+        if (coverNativeNumbers)
+            p.fillRect(rect, bg);
 
-        block = block.next();
+        p.setPen(fg);
+        p.setFont(font());
+        p.drawText(rect, Qt::AlignRight | Qt::AlignVCenter, number);
     }
 }
 
@@ -127,21 +140,25 @@ void NumbersColumn::updateGeometry() {
     if (not mEditor)
         return;
 
-    QFontMetrics fm(mEditor->textDocument()->fontSettings().font());
-    int lineHeight = fm.lineSpacing();
-    setFont(mEditor->extraArea()->font());
+    const QFont font = mEditor->extraArea()->font();
+    setFont(font);
 
-    QRect rect = mEditor->extraArea()->geometry().adjusted(0, 0, -3, 0);
-    bool marksVisible = mEditor->marksVisible();
-    bool lineNumbersVisible = mEditor->lineNumbersVisible();
-    bool foldMarksVisible = mEditor->codeFoldingVisible();
+    const QRect extraArea = mEditor->extraArea()->geometry();
+    int markWidth = 0;
+    const int extraAreaWidth = mEditor->extraAreaWidth(&markWidth);
 
-    if (marksVisible and lineNumbersVisible)
-        rect.setLeft(lineHeight);
+    int foldWidth = 0;
+    if (mEditor->codeFoldingVisible()) {
+        const int lineSpacing = mEditor->extraArea()->fontMetrics().lineSpacing();
+        foldWidth = lineSpacing + lineSpacing % 2 + 1;
+    }
 
-    if (foldMarksVisible and (marksVisible or lineNumbersVisible))
-        rect.setRight(rect.right() - (lineHeight + lineHeight % 2));
-
+    // The line-number column starts after the marks and ends before the folding
+    // column and the four pixels of padding TextEditorWidget reserves on its
+    // right (see TextEditorWidget::extraAreaWidth()).
+    QRect rect = extraArea;
+    rect.setLeft(extraArea.left() + markWidth);
+    rect.setRight(extraArea.left() + extraAreaWidth - 4 - foldWidth);
     setGeometry(rect);
 
     update();
