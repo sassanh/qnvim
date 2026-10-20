@@ -39,18 +39,23 @@ endif()
 find_package(QtCreator REQUIRED COMPONENTS Core)
 
 if (APPLE)
-  # On macOS CMake's FindCups/FindZLIB report the SDK's usr/include as the package include
-  # directory. Qt links Cups::Cups (through Qt6::PrintSupport), so that directory reaches
-  # every Qt Widgets consumer as a -isystem flag. User -isystem directories are searched
-  # before the compiler's own C++ standard library directories, which makes <cmath> pick the
-  # C <math.h> instead of libc++'s wrapper and fails the build. The compiler already searches
-  # the SDK sysroot, so drop the redundant directory from those imported targets.
+  # On macOS FindCups/FindZLIB report <SDK>/usr/include as the package include directory.
+  # Qt links Cups::Cups (through Qt6::PrintSupport), so it reaches every Qt Widgets consumer
+  # as a -isystem flag. CMake normally omits directories the compiler searches implicitly,
+  # but a build directory reused after switching Xcode keeps the previous SDK in
+  # CUPS_INCLUDE_DIR/ZLIB_INCLUDE_DIR; that path is not implicit to the active compiler and
+  # then comes before libc++'s headers, so <cmath> includes the C <math.h> and fails to find
+  # libc++'s <math.h>. Strip SDK include directories from those imported targets. A fresh
+  # configure (or deleting the build directory) re-finds the packages and avoids the mismatch;
+  # cached CUPS_LIBRARIES/ZLIB_LIBRARY_RELEASE may still point into the old SDK until then.
+  # The imported targets are directory-scoped, so this block must stay at top level, after
+  # find_package(QtCreator) and before add_subdirectory(src).
   foreach(_pkg_target IN ITEMS Cups::Cups ZLIB::ZLIB)
     if (TARGET ${_pkg_target})
       get_target_property(_pkg_dirs ${_pkg_target} INTERFACE_INCLUDE_DIRECTORIES)
       if (_pkg_dirs)
         foreach(_pkg_dir IN LISTS _pkg_dirs)
-          if (_pkg_dir MATCHES "/usr/include/?$")
+          if (_pkg_dir MATCHES "/MacOSX[^/]*\\.sdk/usr/include/?$")
             list(REMOVE_ITEM _pkg_dirs "${_pkg_dir}")
           endif()
         endforeach()

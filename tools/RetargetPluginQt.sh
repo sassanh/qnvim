@@ -16,9 +16,10 @@
 # names and bind to the Qt bundled in the Qt Creator the plugin is installed
 # into. This script is the fallback for builds that can't do that: it rewrites
 # the absolute non-system framework references of an already-built plugin to
-# @rpath/<name>.framework/Versions/A/<name>. Since the plugin already carries
-# Qt Creator's "@loader_path/../../Frameworks" rpath, it then uses the Qt
-# bundled in the Qt Creator it is installed into.
+# @rpath/<name>.framework/<suffix>, where <suffix> is whatever follows
+# ".framework/" in the original path (normally Versions/A/<name>). Since the
+# plugin already carries Qt Creator's "@loader_path/../../Frameworks" rpath, it
+# then uses the Qt bundled in the Qt Creator it is installed into.
 #
 # Usage:
 #     tools/RetargetPluginQt.sh [path/to/libQNVim.dylib]
@@ -31,6 +32,9 @@
 #   * Only works while the plugin doesn't use symbols missing from the Qt
 #     bundled in the target Qt Creator.
 #   * Run it again after every rebuild.
+#   * Absolute rpaths recorded in the plugin (e.g. Homebrew's /opt/homebrew/lib)
+#     are left alone. The @loader_path rpath is searched first, so the
+#     retargeted frameworks still resolve inside Qt Creator's bundle.
 #   * The plugin is re-signed ad-hoc afterwards, which arm64 macOS requires.
 
 set -euo pipefail
@@ -61,10 +65,13 @@ fi
 
 echo "Retargeting $plugin"
 while read -r lib; do
-	fw="$(basename "$lib")"
+	prefix="${lib%%.framework/*}"
+	fw="${prefix##*/}"
+	suffix="${lib#"$prefix.framework/"}"
+	dest="@rpath/$fw.framework/$suffix"
 	echo "  $lib"
-	echo "    -> @rpath/$fw.framework/Versions/A/$fw"
-	install_name_tool -change "$lib" "@rpath/$fw.framework/Versions/A/$fw" "$plugin"
+	echo "    -> $dest"
+	install_name_tool -change "$lib" "$dest" "$plugin"
 done <<<"$frameworks"
 
 codesign --force --sign - "$plugin"

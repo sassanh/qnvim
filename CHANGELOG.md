@@ -30,6 +30,8 @@ All notable changes to this project will be documented in this file. This projec
 
 - Cursor synchronizing from the editor side works with current Neovim: `SetCursor()` tested the mode with the `or` operator, which Neovim's expression parser rejects (`E488: Trailing characters: or ...`), so every cursor movement in a Qt Creator editor errored in Neovim.
 
+- `tools/RetargetPluginQt.sh` derives the retargeted framework path from the original one instead of assuming a `Versions/A` layout, so it also handles frameworks with other layouts.
+
 **Changed**
 
 - Qt Creator's "Enable text wrapping" setting (Text Editor → Display) and Neovim's `wrap` option are now kept in sync: changing either one changes the other, so the editor's wrapping always agrees with Neovim. The setting follows the current window's option, while toggling the setting applies it to all Neovim windows (and to windows created later).
@@ -44,7 +46,7 @@ All notable changes to this project will be documented in this file. This projec
 
 - Fix a Qt Creator crash when Neovim is not running: opening a file or typing used to send requests over a connection that was not ready yet (dereferencing a null `NeovimApi2`). The connection's readiness is now checked before every request and connection errors are logged instead.
 - Fix filetype detection never running for files opened in Qt Creator, which left `'filetype'` and filetype-plugin options such as `'commentstring'` empty for all filetypes ([#64](https://github.com/sassanh/qnvim/issues/64)).
-- Fix macOS compilation failure caused by the SDK's `usr/include` leaking into the include path through the `Cups::Cups`/`ZLIB::ZLIB` imported targets (made `<cmath>` resolve to the C header instead of libc++'s wrapper).
+- Fix the macOS compilation failure caused by the SDK's `usr/include` leaking into the include path through the `Cups::Cups`/`ZLIB::ZLIB` imported targets: a build directory reused after switching Xcode kept the previous SDK in the cached include paths, and that directory came before libc++'s headers, so `<cmath>` could not find libc++'s `<math.h>`.
 
 **Changed**
 
