@@ -1,6 +1,7 @@
 #include "qnvimplugin.h"
 
 #include "qnvimcore.h"
+#include "qnvimsettingspage.h"
 #include "log.h"
 #include "qnvimconstants.h"
 
@@ -10,6 +11,8 @@
 
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditorconstants.h>
+
+#include <utils/filepath.h>
 
 #include <QAction>
 #include <QMenu>
@@ -42,8 +45,16 @@ void setupPlainTextCreators(TextEditor::TextEditorFactory &factory) {
 
 } // namespace
 
+QNVimPlugin::QNVimPlugin() = default;
+
+QNVimPlugin::~QNVimPlugin() = default;
+
 Utils::Result<> QNVimPlugin::initialize(const QStringList &arguments) {
     Q_UNUSED(arguments)
+
+    Core::IOptionsPage::registerCategory(Constants::SETTINGS_CATEGORY_ID, tr("QNVim"),
+                                         Utils::FilePath());
+    m_settingsPage = std::make_unique<QNVimSettingsPage>();
 
     new HelpEditorFactory();
     new TerminalEditorFactory();

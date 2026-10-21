@@ -56,6 +56,8 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
 - Long commands and multiline messages are shown in full and can be scrolled.
 - Messages are cleared and hidden when Neovim clears them; the command line is
   hidden when Neovim hides it.
+- The command line, messages and completion menu can be handed over to Neovim
+  plugins such as noice.nvim; see [Configuration](configuration.md).
 
 ## Viewport and scrolling
 

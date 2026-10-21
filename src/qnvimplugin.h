@@ -8,6 +8,7 @@ namespace QNVim {
 namespace Internal {
 
 class QNVimCore;
+class QNVimSettingsPage;
 class NumbersColumn;
 
 class QNVimPlugin : public ExtensionSystem::IPlugin {
@@ -15,7 +16,8 @@ class QNVimPlugin : public ExtensionSystem::IPlugin {
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "QNVim.json")
 
   public:
-    QNVimPlugin() = default;
+    QNVimPlugin();
+    ~QNVimPlugin() override;
 
     Utils::Result<> initialize(const QStringList &arguments) override;
     void extensionsInitialized() override;
@@ -25,6 +27,7 @@ class QNVimPlugin : public ExtensionSystem::IPlugin {
 
   private:
     std::unique_ptr<QNVimCore> m_core;
+    std::unique_ptr<QNVimSettingsPage> m_settingsPage;
 };
 
 class HelpEditorFactory : public TextEditor::TextEditorFactory {

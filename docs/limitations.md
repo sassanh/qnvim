@@ -22,6 +22,12 @@ Floating windows are display-only: the cursor is not drawn inside a float and
 mouse events are not forwarded to it. Keys and clicks pass through to the editor
 below, so use the keyboard with pickers and completion menus.
 
+## Command line and messages handed to plugins
+
+When the command line, messages and completion menu are set to be rendered by
+Neovim plugins, qnvim does not render them itself. A plugin such as noice.nvim
+must handle them; without one, the command line and messages are not visible.
+
 ## Syntax highlighting
 
 Editor syntax highlighting comes from Qt Creator, not from Neovim's colorscheme

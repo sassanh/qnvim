@@ -3,6 +3,7 @@
 #include "cmdline.h"
 #include "numbers_column.h"
 #include "log.h"
+#include "qnvimsettings.h"
 #include "textpos.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -232,12 +233,20 @@ void QNVimCore::sendPreamble() {
 // renders). Attaching is what makes Neovim draw at all, so the editor the user
 // is in is opened once the attachment is done.
 void QNVimCore::attachUi() {
+    // Neovim forces ext_cmdline on while ext_messages is on, and plugins that
+    // want to render these widgets themselves (noice.nvim, ...) disable their
+    // own handlers for every widget the host UI has claimed. Keep the whole
+    // group together: either qnvim renders it or the plugins do.
+    const bool qnvimWidgets = settings().widgetsProvider() == WidgetsProvider::QNVim;
+    qInfo(Main) << "Neovim: command line, messages and completion menu rendered by"
+                << (qnvimWidgets ? "QNVim" : "Neovim plugins");
+
     QVariantMap options;
-    options.insert("ext_popupmenu", true);
+    options.insert("ext_popupmenu", qnvimWidgets);
     options.insert("ext_tabline", false);
-    options.insert("ext_cmdline", true);
-    options.insert("ext_wildmenu", true);
-    options.insert("ext_messages", true);
+    options.insert("ext_cmdline", qnvimWidgets);
+    options.insert("ext_wildmenu", qnvimWidgets);
+    options.insert("ext_messages", qnvimWidgets);
     options.insert("ext_multigrid", true);
     options.insert("ext_hlstate", true);
     options.insert("rgb", true);

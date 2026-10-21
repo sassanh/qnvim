@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- The command line, messages and completion menu can be rendered by Neovim plugins such as noice.nvim: **Preferences > QNVim > Command line, messages and completion menu** selects between **Rendered by QNVim** (the default) and **Rendered by Neovim plugins**. The setting is applied when qnvim starts; in plugin mode qnvim no longer claims `ext_messages`, `ext_cmdline`, `ext_popupmenu` or `ext_wildmenu`, so plugins that defer to the host UI can take over.
+
 - `./quick-run.sh` runs the development loop in one command: it configures and builds the plugin, installs it into the Qt Creator downloaded under `external/qtcreator/` (retargeting it to the bundled Qt on macOS), stops a running instance and starts it with qnvim's logging enabled.
 
 - Splits/windows support: Neovim's `:split`, `:vsplit` and any other window now show up as Qt Creator splits in the same arrangement as in Neovim (each one keeps its own file, cursor and viewport), and Qt Creator's own splits become Neovim windows. Closing a Neovim window removes its Qt Creator split; closing a split (or closing the last editor in it) closes its Neovim window ([#3](https://github.com/sassanh/qnvim/issues/3)). Known limitations: split sizes are not synced between the two, unnamed/scratch buffers get no editor, and Neovim tabpages are shown as splits in the same editor area.

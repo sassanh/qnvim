@@ -1,5 +1,21 @@
 # Configuration
 
+## Command line, messages and completion menu
+
+By default qnvim renders Neovim's command line, messages and completion menu.
+To let a Neovim plugin such as [noice.nvim](https://github.com/folke/noice.nvim)
+render them instead, open *Preferences > QNVim* (*Tools > Options > QNVim* on
+Linux and Windows) and set **Command line, messages and completion menu** to
+**Rendered by Neovim plugins**.
+
+The choice is made when Neovim is attached, so restart qnvim after changing it
+(toggle it off and on from the QNVim menu, or restart Qt Creator).
+
+In plugin mode qnvim does not claim Neovim's message, command-line or
+completion-menu widgets. A plugin must handle them; without one, they are not
+shown. This option cannot be set from `qnvim.vim`: that file is sourced after
+the UI is attached.
+
 ## `qnvim.vim`
 
 Put a `qnvim.vim` file in the same directory as your `init.vim`/`init.lua`.
