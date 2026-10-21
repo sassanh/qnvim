@@ -18,7 +18,7 @@ execute "command -bar DeployAll call rpcnotify(g:neovim_channel, 'Gui', 'trigger
 execute "command -bar Run call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.Run')"
 execute "command -bar Debug call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.Debug')"
 execute "command -bar DebugStart call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.Debug')"
-execute "command -bar DebugContinue call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.Continue')"
+execute "command -bar DebugContinue call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'Debugger.Continue')"
 execute "command -bar QMake call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'Qt4Builder.RunQMake')"
 execute "command -bar Target call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.SelectTargetQuick')"
 execute "autocmd BufReadCmd * :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufReadCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)"

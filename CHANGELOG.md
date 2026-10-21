@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- `:DebugContinue` continues the debugger: it triggered `ProjectExplorer.Continue`, which is not a Qt Creator action (the debugger's Continue action is `Debugger.Continue`), and triggering an unknown command id crashed Qt Creator. Unknown command ids now log a warning instead.
+
+- By default, files opened from Neovim use Qt Creator's text editor for their type instead of a fixed suffix list, so files such as Python, CMake or JSON get Qt Creator's syntax highlighting. Files with no matching Qt Creator text editor still open as plain text.
+
 - The relative line numbers stay aligned with their lines: each number is placed on the first visual row of its buffer line using the editor's own line geometry, so wrapped lines, folds and the partially visible top line no longer make the column drift. The column also uses the exact width of Qt Creator's line-number column, leaving the marks and folding columns untouched.
 
 - Sync the editor viewport with Neovim's window: commands that scroll Neovim's window without moving the cursor (`zz`, `zt`, `zb`, `<C-e>`, `<C-y>`, `<C-d>`, `<C-u>`, `H`, `M`, `L`, ...) used to leave the Qt Creator editor view where it was, so they appeared to do nothing. The editor is now scrolled to Neovim's top line ([#15](https://github.com/sassanh/qnvim/issues/15)).

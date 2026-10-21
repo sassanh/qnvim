@@ -7,6 +7,7 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
+#include <coreplugin/editormanager/ieditorfactory.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
 
@@ -74,6 +75,21 @@ Core::IEditor *editorForView(QWidget *view) {
     }
 
     return nullptr;
+}
+
+// Open a file in Qt Creator's text editor for its type. Resource editors and
+// other non-text editors (the .ui form editor, image viewers, ...) are skipped:
+// qnvim can only show buffers in text editors. The plain text editor is the
+// fallback for types that have no text editor.
+Core::IEditor *openTextEditor(const Utils::FilePath &filePath) {
+    const Core::EditorFactories factories =
+        Core::IEditorFactory::preferredEditorFactories(filePath);
+    for (Core::IEditorFactory *factory : factories) {
+        if (dynamic_cast<TextEditor::TextEditorFactory *>(factory))
+            return Core::EditorManager::openEditor(filePath, factory->id());
+    }
+
+    return Core::EditorManager::openEditor(filePath, "Core.PlainTextEditor");
 }
 
 } // namespace
@@ -802,24 +818,10 @@ Core::IEditor *QNVimCore::openEditorForBuffer(int buffer, const QString &filenam
 
     Core::IEditor *opened = nullptr;
     if (bufferType.isEmpty() and QFile::exists(filename)) {
-        QFileInfo fileInfo = QFileInfo(filename);
-        if (alwaysText) {
-            if ((QStringList() << "js"
-                               << "qml"
-                               << "cpp"
-                               << "c"
-                               << "cc"
-                               << "hpp"
-                               << "h"
-                               << "pro")
-                    .contains(fileInfo.suffix(), Qt::CaseInsensitive))
-                opened = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
-            else
-                opened = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename),
-                                                         "Core.PlainTextEditor");
-        } else {
+        if (alwaysText)
+            opened = openTextEditor(Utils::FilePath::fromString(filename));
+        else
             opened = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
-        }
     } else if (bufferType == "help") {
         QString title = filename;
         opened = Core::EditorManager::openEditorWithContents("Help", &title, QByteArray(), filename);
@@ -1668,7 +1670,13 @@ void QNVimCore::syncFromVim() {
 }
 
 void QNVimCore::triggerCommand(const QByteArray &commandId) {
-    Core::ActionManager::command(Utils::Id::fromName(commandId))->action()->trigger();
+    Core::Command *command = Core::ActionManager::command(Utils::Id::fromName(commandId));
+    if (!command) {
+        qWarning(Main) << "No Qt Creator command with id" << commandId;
+        return;
+    }
+
+    command->action()->trigger();
 }
 
 void QNVimCore::saveCursorFlashTime(int cursorFlashTime) {
@@ -2146,23 +2154,10 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                         }
                     } else {
                         if (bufferType.isEmpty() && QFile::exists(filename)) {
-                            QFileInfo fileInfo = QFileInfo(filename);
-                            if (alwaysText) {
-                                if ((QStringList() << "js"
-                                                   << "qml"
-                                                   << "cpp"
-                                                   << "c"
-                                                   << "cc"
-                                                   << "hpp"
-                                                   << "h"
-                                                   << "pro")
-                                        .contains(fileInfo.suffix(), Qt::CaseInsensitive))
-                                    e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
-                                else
-                                    e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename), "Core.PlainTextEditor");
-                            } else {
+                            if (alwaysText)
+                                e = openTextEditor(Utils::FilePath::fromString(filename));
+                            else
                                 e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
-                            }
                         } else {
                             if (bufferType == "terminal") {
                                 e = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);

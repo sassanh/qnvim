@@ -77,5 +77,6 @@ QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
   Local commits on `master` are fine.
 - Keep the public-API-only approach.
 - Remove temporary diagnostics before committing.
-- Update `CHANGELOG.md` (Unreleased → Added/Fixed) and `README.md` (Status)
-  when behavior or limitations change.
+- Update `CHANGELOG.md` (Unreleased → Added/Fixed) and the relevant
+  documentation (`docs/features.md`, `docs/limitations.md`, ...) when behavior
+  or limitations change.

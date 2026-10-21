@@ -305,8 +305,8 @@ class QNVimCore : public QObject {
     QMap<int, QString> mBufferType;
     // The buffer whose content mText holds (0 while it holds none).
     int mTextBuffer = 0;
-    // Whether buffers without a file type are opened as plain text (see
-    // g:QNVIM_always_text).
+    // Whether files opened by Neovim are restricted to Qt Creator text editors
+    // (see g:QNVIM_always_text).
     bool mAlwaysText = true;
 
     // Neovim windows and the Qt Creator editor views that represent them.

@@ -1,86 +1,73 @@
 # qnvim
 
-qnvim is a Qt Creator plugin for users who like editing text in Neovim/Vim and also want to use Qt Creator features. This plugin combines the power of Neovim and Qt Creator.
-
-With qnvim, you can run your `init.lua`/`init.vim`, all your Neovim plugins, and any tweaks made in `init.vim`/`init.lua`.
+qnvim is a [Qt Creator](https://www.qt.io/product/development-tools) plugin that
+embeds a real [Neovim](https://neovim.io) and uses it as the editing engine
+behind Qt Creator's text editors. Neovim owns the buffers, windows, cursor,
+command line and messages; Qt Creator renders the text and provides the IDE
+around it.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=twwnnduujzw">
-    <img src="https://user-images.githubusercontent.com/1270688/51085365-02e51900-174d-11e9-92f7-c6daa5ec33de.gif"/>
+    <img src="https://user-images.githubusercontent.com/1270688/51085365-02e51900-174d-11e9-92f7-c6daa5ec33de.gif" alt="qnvim demo"/>
   </a>
 </p>
 
-## Status
+## Features
 
-qnvim is under development, but it's mostly stable and usable. Currently, there are some known issues:
+- **A real Neovim.** qnvim spawns the `nvim` found in `PATH` and runs your
+  configuration and plugins. Neovim is not emulated.
+- **Qt Creator splits are Neovim windows.** `:split`, `:vsplit` and Qt Creator's
+  own splits are kept as counterparts, with each window keeping its own buffer,
+  cursor and viewport.
+- **Floating windows.** Completion menus, hover documentation, pickers and
+  dashboards are shown as overlays with Neovim's text, colors and stacking.
+- **Command line and messages.** Neovim's command line lives in the editor view,
+  and long or multiline messages are shown in full.
+- **IDE integration.** Use `:Build`, `:Run` and friends, or trigger a registered
+  Qt Creator command by id.
+- **Neovim's view behavior.** Line numbers, wrapping and scrolling follow
+  Neovim, and help pages and terminal buffers open in editor views.
 
-- Splits (Neovim windows) are supported, with some rough edges: Neovim's `:split`/`:vsplit` show up as splits on the side they are on in Neovim (Qt Creator's own splits get Neovim windows that match their layout), split sizes are not synced between the two, and Neovim tabpages are all shown as splits in the same editor area.
-- Neovim's floating windows (completion menus, hover popups, pickers, ...) are shown as overlays in Qt Creator's main window, positioned like in Neovim. The cursor is not drawn inside a float yet and mouse events are not forwarded to floats.
-- It should use vim highlights for buffers that Qt Creator doesn't support (like Vim helpfiles and many others)
+See [Features](docs/features.md) for the full behavior.
 
-Most Neovim plugins should work fine, except for a few that rely on highlights or special buffers. Qt Creator already provides excellent highlighting for C++ and QML, so that's not a problem. Work is in progress to handle all types of buffers.
+## Requirements
 
-Please report any issues you encounter and consider contributing to this project if you have the time.
+- Qt Creator matching the plugin version. `master` targets Qt Creator 20.0.1;
+  see [`external/qtcreator/version.cmake`](external/qtcreator/version.cmake).
+- Neovim in `PATH`. qnvim is developed against Neovim 0.12.6; older releases
+  may work but are not tested.
+- To build: Qt 6.8+ development files, CMake 3.22+, a C++20 compiler, and
+  network access on the first configure.
 
-## How does qnvim compare with Qt Creator Vim mode?
+Windows, Linux and macOS are supported.
 
-qnvim provides a smoother integration of Neovim within Qt Creator by running an actual instance of Neovim. This allows you to use all your Neovim plugins and customizations directly in Qt Creator. On the other hand, Qt Creator Vim mode is a built-in feature that emulates Vim, offering basic Vim keybindings and functionality but does not support the full range of Neovim features and plugins. The main difference between the two is that qnvim runs a real instance of Neovim, while Qt Creator Vim mode is an emulation of Vim.
+## Installation
 
-## Installation instructions
+Download a release matching your Qt Creator version from the
+[releases page](https://github.com/sassanh/qnvim/releases) and install it
+through *Help > About Plugins > Install Plugin...* (*Qt Creator > About
+Plugins* on macOS). Release archives are built from tags and may lag behind
+`master`.
 
-### From Releases section
-
-Go to the releases section and download the version of the plugin matching your Qt Creator version and operating system. Then:
-
-1. Open Qt Creator > Help > About Plugins > Install Plugin...
-2. Select the plugin you've downloaded earlier and relaunch Qt Creator.
-
-### Building from source
-
-> ⚠️ **Warning** ⚠️
->
-> As per Qt policies, major and minor versions of Qt Creator Plugin APIs are not compatible. This means that there is no guarantee that the plugin version on the master branch is compatible with any version of Qt Creator not specified in `external/qtcreator/version.cmake`.
-
-1. Make sure you have Qt 6.8+ development files and CMake 3.22+ installed on your system.
-2. Clone this repository and go to its directory. Checkout a Git tag that is compatible with your Qt Creator version (currently Qt Creator 20.0.1, Qt 6.8.3, C++20).
-3. `cmake -S . -B build/`.
-4. `cmake --build build/`. The compiled plugin will be inside `build/lib/qtcreator/plugins`.
-5. Open Qt Creator > Help > About Plugins > Install Plugin... Select the plugin you have built earlier.
-
-> **Note (macOS):** when the plugin loads, it resolves Qt from the Qt Creator it is installed into, so it can be built with a Qt newer than the version listed above as long as it's an official Qt build (Qt installer or [aqt](https://github.com/miurahr/aqtinstall)). Qt builds that link their libraries by absolute path (e.g. Homebrew's) produce plugins that fail to load with a symbol error; for those, `tools/RetargetPluginQt.sh` can fix up an already-built plugin (see the comments at the top of the script).
-
-#### Running a development build
-
-`quick-run.sh` runs the whole loop for you on macOS and Linux: it configures and builds the plugin, installs it into the Qt Creator downloaded under `external/qtcreator/` (retargeting it to the Qt bundled in Qt Creator on macOS), stops a running instance and starts it with qnvim's logging enabled.
-
-```sh
-./quick-run.sh                     # build and run
-./quick-run.sh src/qnvimcore.cpp   # build, run and open a file
-```
-
-#### Updating
-
-Before updating from source, delete the `build` directory from earlier to avoid problems such as [this](https://github.com/sassanh/qnvim/issues/8#issuecomment-485456543).
-
-To update the plugin you need to recompile it: checkout a tag, that matches your Qt Creator version and execute the steps above again.
-
-### Arch Linux
-
-Arch Linux users can install [qnvim-git](https://aur.archlinux.org/packages/qnvim-git) from AUR via AUR helper or with the following commands:
-
-```bash
-git clone https://aur.archlinux.org/qnvim-git.git
-cd qnvim-git
-makepkg -si
-```
+To build from source, see [Building and installing](docs/building.md).
 
 ## Configuration
 
-You can add custom Vim commands for your Qt Creator environment in a `qnvim.vim` file located in the same directory as `init.vim` (`:help $MYVIMRC`). `$MYQVIMRC` is set to the path (mind the `Q` after `MY`).
+Add a `qnvim.vim` next to your `init.vim`/`init.lua`; qnvim exposes its path as
+`$MYQVIMRC` and sources it at startup. From it you can trigger Qt Creator
+commands through `g:neovim_channel`.
 
-### Sample `qnvim.vim`
+See [Configuration](docs/configuration.md) and
+[`examples/qnvim.vim`](examples/qnvim.vim).
 
-There's a sample `examples/qnvim.vim` file available in the repository. It provides most of the convenient keyboard shortcuts for building, deploying, running, switching buffers, switching tabs, and more. It will also help you understand how to create new keyboard shortcuts using Qt Creator commands.
+## Documentation
+
+See the [documentation index](docs/index.md).
+
+## Status
+
+qnvim is stable for day-to-day editing. The remaining limitations are documented
+in [Limitations](docs/limitations.md).
 
 ## Credits
 
@@ -89,4 +76,6 @@ There's a sample `examples/qnvim.vim` file available in the repository. It provi
 - [Qt Creator](https://www.qt.io/product)
 - [Neovim Qt](https://github.com/equalsraf/neovim-qt)
 
-And the libraries used in above projects and are mentioned in their docs.
+## License
+
+MIT. See [LICENSE](LICENSE).
