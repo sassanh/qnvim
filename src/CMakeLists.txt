@@ -27,6 +27,8 @@ add_qtc_plugin(QNVim
     cmdline.h
     textediteventfilter.cpp
     textediteventfilter.h
+    textpos.cpp
+    textpos.h
 )
 
 # Compress the resource with zlib instead of zstd: rcc's zstd resources refer to

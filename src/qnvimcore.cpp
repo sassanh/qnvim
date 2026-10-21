@@ -3,6 +3,7 @@
 #include "cmdline.h"
 #include "numbers_column.h"
 #include "log.h"
+#include "textpos.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
@@ -1171,9 +1172,9 @@ void QNVimCore::syncCursorToVim(Core::IEditor *editor) {
         return;
 
     const auto text = textEditor->toPlainText();
-    int cursorPosition = textEditor->textCursor().position();
-    int line = QStringView(text).left(cursorPosition).count('\n') + 1;
-    int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
+    const LineColumn cursor = lineColumn(text, textEditor->textCursor().position());
+    const int line = cursor.line;
+    const int col = cursor.column;
 
     WindowState &st = mWindows[win];
     if (line == st.cursorLine and col == st.cursorCol)
@@ -1231,15 +1232,22 @@ void QNVimCore::syncSelectionToVim(Core::IEditor *editor) {
         auto lastCursor = mainCursor == *mtc.begin() ? mtc.cursors().last() : *mtc.begin();
         auto nvimAnchor = lastCursor.anchor();
 
-        line = QStringView(text).left(nvimPos).count('\n') + 1;
-        col = text.left(nvimPos).section('\n', -1).length() + 1;
-        vLine = QStringView(text).left(nvimAnchor).count('\n') + 1;
-        vCol = text.left(nvimAnchor).section('\n', -1).length() + 1;
+        LineColumn cursorPos = lineColumn(text, nvimPos);
+        LineColumn anchorPos = lineColumn(text, nvimAnchor);
 
-        if (vCol < col)
-            --col;
-        else if (vCol > col)
-            --vCol;
+        // Vim's visual block edges are inclusive, Qt's caret end is exclusive:
+        // step the larger (exclusive) end back one character, before the byte
+        // column is computed, so that the column never lands inside a
+        // multi-byte character.
+        if (anchorPos.column < cursorPos.column)
+            cursorPos = lineColumn(text, nvimPos - 1);
+        else if (anchorPos.column > cursorPos.column)
+            anchorPos = lineColumn(text, nvimAnchor - 1);
+
+        line = cursorPos.line;
+        col = cursorPos.column;
+        vLine = anchorPos.line;
+        vCol = anchorPos.column;
 
         visualCommand = "\x16";
     } else if (mMode == "V") {
@@ -1257,10 +1265,12 @@ void QNVimCore::syncSelectionToVim(Core::IEditor *editor) {
         else
             --anchorPosition;
 
-        line = QStringView(text).left(cursorPosition).count('\n') + 1;
-        col = text.left(cursorPosition).section('\n', -1).length() + 1;
-        vLine = QStringView(text).left(anchorPosition).count('\n') + 1;
-        vCol = text.left(anchorPosition).section('\n', -1).length() + 1;
+        const LineColumn cursorPos = lineColumn(text, cursorPosition);
+        const LineColumn anchorPos = lineColumn(text, anchorPosition);
+        line = cursorPos.line;
+        col = cursorPos.column;
+        vLine = anchorPos.line;
+        vCol = anchorPos.column;
         visualCommand = "v";
     }
 
@@ -1308,12 +1318,10 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
         return;
 
     int line = pos[0].toInt();
-    int col = pos[1].toInt();
-    col = QString::fromUtf8(mText.section('\n', line - 1, line - 1).toUtf8().left(col - 1)).length() + 1;
+    int col = utf16Column(mText, line, pos[1].toInt());
 
     int vLine = vPos[0].toInt();
-    int vCol = vPos[1].toInt();
-    vCol = QString::fromUtf8(mText.section('\n', vLine - 1, vLine - 1).toUtf8().left(vCol)).length();
+    int vCol = utf16Column(mText, vLine, vPos[1].toInt());
 
     mMode = mode;
     st.cursorLine = line;
@@ -1331,15 +1339,15 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
             textEditor->setTopBlock(block);
     }
 
-    int anchor = QString("\n" + mText).section('\n', 0, vLine - 1).length() + vCol - 1;
-    int position = QString("\n" + mText).section('\n', 0, line - 1).length() + col - 1;
+    int anchor = positionFor(mText, vLine, vPos[1].toInt());
+    int position = positionFor(mText, line, pos[1].toInt());
     if (mMode == "V") {
         if (anchor < position) {
-            anchor = QString("\n" + mText).section('\n', 0, vLine - 1).length();
-            position = QString("\n" + mText).section('\n', 0, line).length() - 1;
+            anchor = lineStart(mText, vLine);
+            position = lineEnd(mText, line);
         } else {
-            anchor = QString("\n" + mText).section('\n', 0, vLine).length() - 1;
-            position = QString("\n" + mText).section('\n', 0, line - 1).length();
+            anchor = lineEnd(mText, vLine);
+            position = lineStart(mText, line);
         }
 
         QTextCursor cursor = textEditor->textCursor();
@@ -1441,9 +1449,9 @@ void QNVimCore::syncToVim(Core::IEditor *editor, std::function<void()> callback)
         return;
 
     QString text = textEditor->toPlainText();
-    int cursorPosition = textEditor->textCursor().position();
-    int line = QStringView(text).left(cursorPosition).count('\n') + 1;
-    int col = text.left(cursorPosition).section('\n', -1).toUtf8().length() + 1;
+    const LineColumn cursor = lineColumn(text, textEditor->textCursor().position());
+    const int line = cursor.line;
+    const int col = cursor.column;
 
     if (mTextBuffer != bufferNumber or mText != text) {
         auto request = mNVim->api2()->nvim_buf_set_lines(bufferNumber, 0, -1, true, text.toUtf8().split('\n'));
