@@ -1,5 +1,6 @@
 #pragma once
 
+#include "numbers_column.h"
 #include "qnvimfloat.h"
 
 #include <QColor>
@@ -27,7 +28,6 @@ namespace QNVim {
 namespace Internal {
 
 class CmdLine;
-class NumbersColumn;
 
 /**
  * Encapsulates plugin's behavior with an assumption, that it is enabled.
@@ -98,6 +98,9 @@ class QNVimCore : public QObject {
     // the args of that one event.
     void redrawEvent(const QByteArray &, const QVariantList &);
     void updateCursorSize();
+    // The column is a child of the editor it is shown in and can be destroyed
+    // with it; recreate it if that happened.
+    NumbersColumn *numbersColumn();
 
     // A Neovim window and the editor view that represents it. A window shows
     // the buffer of the editor that is current in its view; the window and the
@@ -296,7 +299,9 @@ class QNVimCore : public QObject {
     bool mEnabled = true;
 
     CmdLine *m_cmdLine = nullptr;
-    NumbersColumn *mNumbersColumn = nullptr;
+    // Parented to the editor it shows the numbers in; Qt Creator may destroy
+    // that editor (and with it the column) before qnvim shuts down.
+    QPointer<NumbersColumn> mNumbersColumn;
     NeovimQt::NeovimConnector *mNVim = nullptr;
     unsigned mVimChanges = 0;
     QMap<Core::IEditor *, int> mBuffers;

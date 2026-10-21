@@ -150,13 +150,23 @@ QNVimCore::QNVimCore(QObject *parent)
     m_cmdLine = new CmdLine(this);
 }
 
+NumbersColumn *QNVimCore::numbersColumn() {
+    if (!mNumbersColumn)
+        mNumbersColumn = new NumbersColumn();
+    return mNumbersColumn;
+}
+
 QNVimCore::~QNVimCore()
 {
     disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged,
                this, &QNVimCore::saveCursorFlashTime);
     QApplication::setCursorFlashTime(mSavedCursorFlashTime);
 
-    mNumbersColumn->deleteLater();
+    // The editor may already be gone (and the column with it).
+    if (mNumbersColumn) {
+        mNumbersColumn->setEditor(nullptr);
+        mNumbersColumn->deleteLater();
+    }
 
     // The overlays of Neovim's floating windows live in Qt Creator's main
     // window; drop them before anything else goes away.
@@ -1548,8 +1558,8 @@ void QNVimCore::syncFromVim() {
         mNumber = state[7].toBool();
         mRelativeNumber = state[8].toBool();
         mWrap = state[9].toBool();
-        mNumbersColumn->setNumber(mNumber);
-        mNumbersColumn->setEditor(mRelativeNumber ? textEditor : nullptr);
+        numbersColumn()->setNumber(mNumber);
+        numbersColumn()->setEditor(mRelativeNumber ? textEditor : nullptr);
 
         // Neovim's 'wrap' decides whether the editor wraps its lines and where
         // it breaks them.
@@ -1768,8 +1778,11 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     if (!mEnabled)
         return;
 
-    if (!editor)
+    if (!editor) {
+        if (mNumbersColumn)
+            mNumbersColumn->setEditor(nullptr);
         return;
+    }
 
     QString filename(this->filename(editor));
     qDebug(Main) << "Opened " << filename << mSettingBufferFromVim;
@@ -1788,7 +1801,8 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     }
 
     if (!qobject_cast<TextEditor::TextEditorWidget *>(widget)) {
-        mNumbersColumn->setEditor(nullptr);
+        if (mNumbersColumn)
+            mNumbersColumn->setEditor(nullptr);
         return;
     }
     auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(editor->widget());
@@ -1861,7 +1875,7 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     }
     mSettingBufferFromVim = 0;
 
-    mNumbersColumn->setEditor(textEditor);
+    numbersColumn()->setEditor(textEditor);
 
     widget->setAttribute(Qt::WA_KeyCompression, false);
     widget->installEventFilter(this);
@@ -1891,8 +1905,15 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
     if (!mBuffers.contains(editor))
         return;
 
-    if (Core::EditorManager::currentEditor() == editor)
+    // The column is a child of the editor it is shown in; let go of it before
+    // the editor (and the column with it) is destroyed, even if another editor
+    // has become current in the meantime.
+    QWidget *editorWidget = editor->widget();
+    if (mNumbersColumn
+        and (Core::EditorManager::currentEditor() == editor
+             or (editorWidget and mNumbersColumn->parentWidget() == editorWidget))) {
         mNumbersColumn->setEditor(nullptr);
+    }
 
     const int bufferNumber = mBuffers[editor];
     // Whether Neovim is behind the close (it is deleting the buffer, or closed
@@ -2498,7 +2519,8 @@ void QNVimCore::updateCursorSize() {
         textEditor->setCursorWidth(static_cast<int>(textEditorFontMetric.horizontalAdvance('A') * textEditor->textDocument()->fontSettings().fontZoom() / 100));
     }
 
-    mNumbersColumn->updateGeometry();
+    if (mNumbersColumn)
+        mNumbersColumn->updateGeometry();
 }
 
 // Neovim's floating windows (a picker, a hover popup, ...) are mirrored as

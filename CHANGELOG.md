@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- Quitting Qt Creator no longer crashes in qnvim's shutdown when the editor that owned the line-number column was destroyed first: the column is a child of that editor, so it is now tracked with a `QPointer` and detached from an editor that is about to close, even if another editor has become current.
+
 - Visual and visual-block selections in text with non-ASCII characters now cover the characters they are drawn on: the selection's cursor and anchor columns were sent to Neovim as UTF-16 code units instead of the UTF-8 byte columns it uses, so a line with accented or non-Latin characters before the selection put its edges too far left. Both are byte columns now, like the cursor synchronization already was. Visual-block selections that reach an empty line also keep that line as their edge instead of shifting it to the previous line.
 
 - `:DebugContinue` continues the debugger: it triggered `ProjectExplorer.Continue`, which is not a Qt Creator action (the debugger's Continue action is `Debugger.Continue`), and triggering an unknown command id crashed Qt Creator. Unknown command ids now log a warning instead.
