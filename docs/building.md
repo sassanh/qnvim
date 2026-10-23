@@ -6,7 +6,7 @@
   compatible within a major/minor release, so a plugin built for one version is
   not guaranteed to load in another. The version targeted by `master` is in
   [`external/qtcreator/version.cmake`](../external/qtcreator/version.cmake)
-  (currently Qt Creator 20.0.1).
+  (currently Qt Creator 20.0.2).
 - **Neovim** in `PATH`. qnvim is developed against Neovim 0.12.6; older releases
   may work but are not tested.
 - To build: Qt 6.8+ development files, CMake 3.22+, a C++20 compiler, and
@@ -31,7 +31,7 @@ and may lag behind `master`.
 1. Install Qt 6.8+ development files, CMake 3.22+ and a C++20 compiler.
 2. Clone the repository and check out a tag that matches your Qt Creator
    version. (`master` tracks the version in
-   `external/qtcreator/version.cmake`, currently Qt Creator 20.0.1.)
+   `external/qtcreator/version.cmake`, currently Qt Creator 20.0.2.)
 3. Configure and build:
 
    ```sh

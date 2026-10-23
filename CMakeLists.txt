@@ -12,6 +12,8 @@ endif()
 project(QNVim)
 
 option(FETCH_QTC "Download Qt Creator development files automatically" ON)
+option(QNVIM_BUILD_TESTS "Build the GUI mode smoke test (tests/gui)" OFF)
+set(QNVIM_TEST_NVIM "nvim" CACHE STRING "Neovim used by the GUI smoke test")
 
 add_subdirectory(external)
 
@@ -69,3 +71,7 @@ if (APPLE)
 endif()
 
 add_subdirectory(src)
+
+if (QNVIM_BUILD_TESTS)
+  add_subdirectory(tests/gui)
+endif()

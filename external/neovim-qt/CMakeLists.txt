@@ -38,3 +38,6 @@ if(EXISTS "${_msgpackio}")
     file(WRITE "${_msgpackio}" "${_content}")
   endif()
 endif()
+
+# The GUI mode embeds nvim-qt's GUI shim; let src/ find the sources.
+set(QNVIM_NEOVIMQT_SOURCE_DIR "${neovimqt_SOURCE_DIR}" CACHE INTERNAL "neovim-qt sources")

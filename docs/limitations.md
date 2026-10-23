@@ -1,5 +1,8 @@
 # Limitations
 
+This page covers classic mode. GUI mode's limitations are listed in
+[Neovim GUI mode](gui-mode.md#limitations-of-gui-mode).
+
 ## Tabpages
 
 Neovim tabpages do not become Qt Creator tabs. Their windows appear as splits in

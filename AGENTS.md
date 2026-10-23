@@ -9,7 +9,7 @@ Qt Creator sources are fine to read; do not link private headers.
 
 ## Build and run (macOS)
 
-The test Qt Creator lives in `external/qtcreator/dist-Darwin-20.0.1/` (not
+The test Qt Creator lives in `external/qtcreator/dist-Darwin-20.0.2/` (not
 committed; its version must match `external/qtcreator/version.cmake`). The
 build here uses Homebrew Qt, whose frameworks are linked by absolute path, so
 every rebuild must be retargeted before the plugin can load.
@@ -22,21 +22,21 @@ commands remain here for when it fails or a variation is needed:
 cmake --build build --target QNVim -j8
 tools/RetargetPluginQt.sh
 cp "build/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib" \
-   "external/qtcreator/dist-Darwin-20.0.1/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
+   "external/qtcreator/dist-Darwin-20.0.2/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
 codesign --force --sign - \
-   "external/qtcreator/dist-Darwin-20.0.1/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
+   "external/qtcreator/dist-Darwin-20.0.2/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
 ```
 
 Run from the repo root with plugin logging:
 
 ```sh
 QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
-  "external/qtcreator/dist-Darwin-20.0.1/Qt Creator.app/Contents/MacOS/Qt Creator" \
+  "external/qtcreator/dist-Darwin-20.0.2/Qt Creator.app/Contents/MacOS/Qt Creator" \
   src/qnvimcore.h src/qnvimcore.cpp
 ```
 
 - Logs use `qDebug(Main)`; the category is `qtcreator.plugin.qnvim`.
-- SDK headers: `external/qtcreator/dist-Darwin-20.0.1/Qt Creator.sdk/...`.
+- SDK headers: `external/qtcreator/dist-Darwin-20.0.2/Qt Creator.sdk/...`.
 - Crash reports: `~/Library/Logs/DiagnosticReports/`.
 - Stop only the test Qt Creator and its child
   `nvim --embed --cmd let g:QNVIM=1`. **Never kill other `nvim` processes** —

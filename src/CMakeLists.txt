@@ -1,3 +1,20 @@
+# GUI mode resources: qnvim's Lua glue and nvim-qt's GUI shim (:GuiFont, ...),
+# taken from the neovim-qt sources so it always matches the Shell widget.
+set(_shim "${QNVIM_NEOVIMQT_SOURCE_DIR}/src/gui/runtime/plugin/nvim_gui_shim.vim")
+if (NOT EXISTS "${_shim}")
+  message(FATAL_ERROR "neovim-qt GUI shim not found at ${_shim}")
+endif()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/qnvim_gui.qrc" CONTENT
+"<RCC>
+    <qresource prefix=\"/qnvim/gui\">
+        <file alias=\"qnvim_gui.lua\">${CMAKE_CURRENT_SOURCE_DIR}/gui/qnvim_gui.lua</file>
+        <file alias=\"nvim_gui_shim.vim\">${_shim}</file>
+    </qresource>
+</RCC>
+")
+set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/qnvim_gui.qrc"
+  PROPERTIES AUTORCC_OPTIONS "--compress-algo;zlib")
+
 add_qtc_plugin(QNVim
   PLUGIN_DEPENDS
     QtCreator::Core
@@ -29,6 +46,14 @@ add_qtc_plugin(QNVim
     qnvimsettingspage.h
     cmdline.cpp
     cmdline.h
+    gui/nvimguiargs.cpp
+    gui/nvimguiargs.h
+    gui/nvimguiconstants.h
+    gui/nvimguieditor.cpp
+    gui/nvimguieditor.h
+    gui/nvimguisession.cpp
+    gui/nvimguisession.h
+    ${CMAKE_CURRENT_BINARY_DIR}/qnvim_gui.qrc
     textediteventfilter.cpp
     textediteventfilter.h
     textpos.cpp
