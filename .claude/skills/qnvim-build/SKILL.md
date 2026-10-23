@@ -25,7 +25,7 @@ cmake --build build --target QNVim
   macOS `build/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib`
   (danach `tools/RetargetPluginQt.sh`, siehe `docs/building.md`).
 - Installieren: *Hilfe > Über Plugins > Plugin installieren…* oder Datei in
-  `~/.local/share/QtProject/qtcreator/plugins/<Version>/` (Linux) kopieren.
+  `~/.local/share/data/QtProject/qtcreator/plugins/<Version>/` (Linux) kopieren.
 - macOS-Entwicklungsschleife: `./quick-run.sh`.
 
 ## B) Compile-Check (ohne qtcreator_dev, z. B. offline/CI/gesperrte Downloads)

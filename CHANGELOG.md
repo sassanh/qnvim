@@ -24,6 +24,10 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- GUI mode: Neovim no longer starts with `E484: Can't open file .../runtime/plugin/nvim_gui_shim.vim`: the directory for nvim-qt's GUI shim was not created in Qt Creator's cache, so the shim was never written. Only files that exist are passed to Neovim now, and the smoke test extracts the files into an empty directory and checks that Neovim starts without error messages.
+
+- GUI mode: the warning that a font "reports bad fixed pitch metrics" (Qt Creator's default Source Code Pro does) is no longer shown in Neovim at every start; it goes to qnvim's log. The font is used either way; real font errors are still shown.
+
 - Linking the plugin no longer fails with toolchains that do not build position-independent code by default (`relocation R_X86_64_32 against .rodata can not be used when making a shared object`): the static neovim-qt and msgpack-c libraries linked into the plugin are now always built with `-fPIC`.
 
 - Quitting Qt Creator no longer crashes in qnvim's shutdown when the editor that owned the line-number column was destroyed first: the column is a child of that editor, so it is now tracked with a `QPointer` and detached from an editor that is about to close, even if another editor has become current.

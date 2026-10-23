@@ -10,8 +10,11 @@
 //   - nvim-qt's GUI shim is loaded (:GuiFont exists),
 //   - the grid is drawn (screenshot is not blank).
 //
-//   QT_QPA_PLATFORM=offscreen ./qnvim_gui_smoke <qnvim_gui.lua> <nvim_gui_shim.vim> \
-//       <file to open> <screenshot.png> [nvim]
+//   - the runtime files are extracted like in the plugin (extractGuiRuntime),
+//   - Neovim starts without any error message,
+//
+//   QT_QPA_PLATFORM=offscreen ./qnvim_gui_smoke <runtime dir> <file to open> \
+//       <screenshot.png> [nvim]
 
 #include "nvimguiargs.h"
 
@@ -20,6 +23,7 @@
 #include <neovimconnector.h>
 
 #include <QApplication>
+#include <QDir>
 #include <QImage>
 #include <QTimer>
 
@@ -39,17 +43,27 @@ void check(bool ok, const char *what) {
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false); // the Shell closes when Neovim quits
-    if (argc < 5) {
-        std::fprintf(stderr, "usage: %s <lua> <shim> <file> <png> [nvim]\n", argv[0]);
+    if (argc < 4) {
+        std::fprintf(stderr, "usage: %s <runtime dir> <file> <png> [nvim]\n", argv[0]);
         return 2;
     }
-    const QString lua = QString::fromLocal8Bit(argv[1]);
-    const QString shim = QString::fromLocal8Bit(argv[2]);
-    const QString file = QString::fromLocal8Bit(argv[3]);
-    const QString png = QString::fromLocal8Bit(argv[4]);
-    const QString exe = argc > 5 ? QString::fromLocal8Bit(argv[5]) : QStringLiteral("nvim");
+    const QString runtimeDir = QString::fromLocal8Bit(argv[1]);
+    const QString file = QString::fromLocal8Bit(argv[2]);
+    const QString png = QString::fromLocal8Bit(argv[3]);
+    const QString exe = argc > 4 ? QString::fromLocal8Bit(argv[4]) : QStringLiteral("nvim");
 
-    const QStringList args = QNVim::Gui::nvimGuiArguments(lua, shim, {}, {QStringLiteral("--clean")});
+    // Start from an empty directory, like a fresh cache.
+    QDir(runtimeDir).removeRecursively();
+    QNVim::Gui::GuiRuntimeFiles runtime;
+    QString runtimeError;
+    const bool extracted = QNVim::Gui::extractGuiRuntime(runtimeDir, &runtime, &runtimeError);
+    check(extracted && !runtime.luaFile.isEmpty() && !runtime.shimFile.isEmpty(),
+          "runtime files extracted into a fresh directory");
+    if (!extracted)
+        std::fprintf(stderr, "  %s\n", qPrintable(runtimeError));
+
+    const QStringList args = QNVim::Gui::nvimGuiArguments(runtime.luaFile, runtime.shimFile, {},
+                                                          {QStringLiteral("--clean")});
     NeovimConnector *nvim = NeovimConnector::spawn(args, exe);
 
     bool gotBufEnter = false;
@@ -86,6 +100,16 @@ int main(int argc, char **argv) {
                          [](quint32, quint64, const QVariant &v) {
                              check(v.toInt() == 2, "nvim-qt shim loaded (:GuiFont)");
                          });
+        // No error during startup (e.g. a --cmd file that cannot be read).
+        auto msgs = nvim->api2()->nvim_eval("execute('messages')");
+        QObject::connect(msgs, &MsgpackRequest::finished, [](quint32, quint64, const QVariant &v) {
+            const QString m = v.toString();
+            const bool clean = !m.contains(QStringLiteral("E5108")) && !m.contains(QStringLiteral("E484"))
+                               && !m.contains(QStringLiteral("Error"));
+            check(clean, "no error messages at startup");
+            if (!clean)
+                std::fprintf(stderr, "  messages: %s\n", qPrintable(m));
+        });
         auto qtc = nvim->api2()->nvim_eval("exists(':Qtc') && luaeval('type(QNVimGui)') ==# 'table'");
         QObject::connect(qtc, &MsgpackRequest::finished, [](quint32, quint64, const QVariant &v) {
             check(v.toInt() == 1, "qnvim_gui.lua loaded (:Qtc, QNVimGui)");

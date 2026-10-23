@@ -1,6 +1,7 @@
 #include "nvimguiargs.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 
 namespace QNVim {
@@ -15,7 +16,41 @@ QString luaString(const QString &s) {
     return QStringLiteral("[") + level + QStringLiteral("[") + s + QStringLiteral("]") + level
            + QStringLiteral("]");
 }
+bool writeIfChanged(const QString &resource, const QString &target, QString *error) {
+    QFile in(resource);
+    if (!in.open(QIODevice::ReadOnly)) {
+        *error = QStringLiteral("missing resource %1").arg(resource);
+        return false;
+    }
+    const QByteArray data = in.readAll();
+    QFile existing(target);
+    if (existing.open(QIODevice::ReadOnly) && existing.readAll() == data)
+        return true;
+    existing.close();
+    if (!QDir().mkpath(QFileInfo(target).absolutePath())) {
+        *error = QStringLiteral("cannot create directory %1").arg(QFileInfo(target).absolutePath());
+        return false;
+    }
+    QFile out(target);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(data) != data.size()) {
+        *error = QStringLiteral("cannot write %1: %2").arg(target, out.errorString());
+        return false;
+    }
+    return true;
+}
 } // namespace
+
+bool extractGuiRuntime(const QString &runtimeRoot, GuiRuntimeFiles *files, QString *error) {
+    const QString lua = runtimeRoot + QStringLiteral("/qnvim_gui.lua");
+    const QString shim = runtimeRoot + QStringLiteral("/runtime/plugin/nvim_gui_shim.vim");
+    bool ok = writeIfChanged(QStringLiteral(":/qnvim/gui/qnvim_gui.lua"), lua, error);
+    ok = writeIfChanged(QStringLiteral(":/qnvim/gui/nvim_gui_shim.vim"), shim, error) && ok;
+    // Only hand Neovim files that exist; a missing --cmd file aborts startup
+    // with a "Press ENTER" prompt.
+    files->luaFile = QFileInfo::exists(lua) ? lua : QString();
+    files->shimFile = QFileInfo::exists(shim) ? shim : QString();
+    return ok;
+}
 
 QStringList nvimGuiArguments(const QString &luaFile, const QString &shimFile,
                              const QString &listenAddress, const QStringList &extraArgs) {

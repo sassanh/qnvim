@@ -62,22 +62,6 @@ QStringList splitCommaList(const QString &value) {
     return result;
 }
 
-// Copies a resource to the cache directory, so Neovim can read it.
-QString extractResource(const QString &resource, const QString &name) {
-    const Utils::FilePath dir = Core::ICore::cacheResourcePath(QStringLiteral("qnvim-gui"));
-    dir.createDir();
-    const Utils::FilePath target = dir.pathAppended(name);
-    QFile in(resource);
-    if (!in.open(QIODevice::ReadOnly)) {
-        qWarning(Main) << "qnvim gui: missing resource" << resource;
-        return {};
-    }
-    const QByteArray data = in.readAll();
-    if (target.fileContents().value_or(QByteArray()) != data)
-        target.writeFileContents(data);
-    return target.toUserOutput();
-}
-
 } // namespace
 
 NvimGuiSession::NvimGuiSession() {
@@ -181,13 +165,17 @@ void NvimGuiSession::start() {
     m_ready = false;
     m_startTimer.start();
 
-    const QString luaFile = extractResource(QStringLiteral(":/qnvim/gui/qnvim_gui.lua"),
-                                            QStringLiteral("qnvim_gui.lua"));
-    const QString shimFile = extractResource(QStringLiteral(":/qnvim/gui/nvim_gui_shim.vim"),
-                                             QStringLiteral("runtime/plugin/nvim_gui_shim.vim"));
+    GuiRuntimeFiles runtime;
+    QString runtimeError;
+    const QString runtimeRoot
+        = Core::ICore::cacheResourcePath(QStringLiteral("qnvim-gui")).toFSPathString();
+    if (!extractGuiRuntime(runtimeRoot, &runtime, &runtimeError)) {
+        qWarning(Main) << "qnvim gui:" << runtimeError;
+        Core::MessageManager::writeFlashing(tr("qnvim: %1").arg(runtimeError));
+    }
 
     const QStringList args = nvimGuiArguments(
-        luaFile, shimFile, QString::fromLocal8Bit(qgetenv("QNVIM_LISTEN")),
+        runtime.luaFile, runtime.shimFile, QString::fromLocal8Bit(qgetenv("QNVIM_LISTEN")),
         QProcess::splitCommand(settings().extraArguments()));
 
     QString exe = settings().nvimExecutable().trimmed();
@@ -222,6 +210,26 @@ void NvimGuiSession::start() {
 
     m_shell = new NeovimQt::Shell(m_nvim, m_parking);
     m_shell->installEventFilter(this);
+    // nvim-qt reports every font problem as a Neovim error message, including
+    // the warning that a font's bold/italic faces have slightly different
+    // widths (Source Code Pro, Qt Creator's default, does). That font is used
+    // anyway, so keep the warning out of Neovim's start screen; real errors
+    // (unknown font, not fixed pitch) still go to Neovim.
+    if (!QObject::disconnect(m_shell, SIGNAL(fontError(QString)), m_shell,
+                             SLOT(handleFontError(QString)))) {
+        qWarning(Main) << "qnvim gui: could not take over nvim-qt's font error reporting";
+    } else {
+        connect(m_shell, &NeovimQt::ShellWidget::fontError, this, [this](const QString &msg) {
+            if (msg.startsWith(QLatin1String("Warning:"))) {
+                qDebug(Main) << "qnvim gui:" << msg;
+                return;
+            }
+            if (m_shell && m_shell->isNeovimAttached() && m_nvim && m_nvim->api2())
+                m_nvim->api2()->nvim_err_writeln(msg.toUtf8());
+            else
+                qWarning(Main) << "qnvim gui:" << msg;
+        });
+    }
     applyFont();
     connect(m_shell, &NeovimQt::Shell::neovimAttachmentChanged, this, [this](bool attached) {
         if (!attached)
