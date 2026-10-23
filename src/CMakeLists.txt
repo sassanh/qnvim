@@ -64,3 +64,15 @@ add_qtc_plugin(QNVim
 # qt_resourceFeatureZstd, which some QtCore versions do not export (the Qt 6.11
 # of the test Qt Creator, for one), and the plugin would fail to load there.
 set_source_files_properties(qnvim.qrc PROPERTIES AUTORCC_OPTIONS "--compress-algo;zlib")
+
+# License texts travel with release archives (tools/ci/Package.cmake packs the
+# install tree), as MIT and neovim-qt's ISC license require.
+if (IDE_PLUGIN_PATH)
+  set(_qnvim_license_dir "${IDE_PLUGIN_PATH}/QNVim-licenses")
+else()
+  set(_qnvim_license_dir "lib/qtcreator/plugins/QNVim-licenses")
+endif()
+install(FILES
+  "${PROJECT_SOURCE_DIR}/LICENSE"
+  "${PROJECT_SOURCE_DIR}/THIRD-PARTY-NOTICES.md"
+  DESTINATION "${_qnvim_license_dir}")

@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- `THIRD-PARTY-NOTICES.md` with the license notices of neovim-qt (ISC) and msgpack-c (Boost), which are linked into the plugin; release archives now contain it and `LICENSE` under `QNVim-licenses/` next to the plugin.
+
 - **Neovim GUI mode** (the new default, **Preferences > QNVim > General > Mode**): Neovim's own screen is drawn in Qt Creator's editor area by neovim-qt's Shell widget, so all plugins, windows, the command line, messages, completion and `PopUp` menus and floating windows appear exactly as in Neovim. Qt Creator gets one editor per file buffer, so opening files and jumping to lines from the project tree, locator, compile output, search results and the debugger, the open documents list, the modified marker and "save all"/save before build keep working. Neovim becomes the default editor of all text MIME types through Qt Creator's own per-type default editor setting (excluded types and "Open With" stay available). `:Qtc {action}` (with completion, or a `vim.ui.select` picker without an argument) triggers any Qt Creator action; `:Build`, `:Run`, `:Debug`, `:Locator`, ... are shortcuts. Keys go to Neovim except a configurable list of Qt Creator shortcuts. **Tools > QNVim** has **Show Neovim** and **Restart Neovim**. See `docs/gui-mode.md`.
 
 - `tools/compilecheck/`: compiles the plugin against Qt Creator's source headers when the development package cannot be downloaded (see `docs/building.md`).

@@ -87,4 +87,5 @@ in [Limitations](docs/limitations.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Release builds include third-party code; see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
