@@ -219,7 +219,7 @@ void NvimGuiSession::start() {
                              SLOT(handleFontError(QString)))) {
         qWarning(Main) << "qnvim gui: could not take over nvim-qt's font error reporting";
     } else {
-        connect(m_shell, &NeovimQt::ShellWidget::fontError, this, [this](const QString &msg) {
+        connect(m_shell, &ShellWidget::fontError, this, [this](const QString &msg) {
             if (msg.startsWith(QLatin1String("Warning:"))) {
                 qDebug(Main) << "qnvim gui:" << msg;
                 return;
