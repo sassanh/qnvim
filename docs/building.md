@@ -101,3 +101,30 @@ git clone https://aur.archlinux.org/qnvim-git.git
 cd qnvim-git
 makepkg -si
 ```
+
+## Compile check without the development package
+
+When the Qt Creator development package cannot be downloaded (offline machines,
+CI without access to download.qt.io, a version not yet packaged), the plugin can
+be compiled against Qt Creator's source headers instead:
+
+```sh
+QT_PREFIX=/path/to/Qt/6.11/gcc_64 tools/compilecheck/run.sh
+```
+
+The script clones Qt Creator at the tag of `external/qtcreator/version.cmake`,
+neovim-qt and msgpack-c with git, and builds into `build-check/`. The result
+proves the code compiles against that Qt Creator's API; Qt Creator's symbols
+stay unresolved, so it is **not** a binary to install.
+
+## Tests
+
+```sh
+pip install pynvim
+python3 tests/gui/test_protocol.py            # GUI mode protocol, real Neovim
+tools/compilecheck/run.sh --tests             # + offscreen Shell smoke test
+```
+
+The smoke test (`-DQNVIM_BUILD_TESTS=ON`, target `qnvim_gui_smoke_run`) starts
+Neovim with the plugin's arguments in neovim-qt's Shell widget and saves
+screenshots to `build-check/tests/gui/`.
