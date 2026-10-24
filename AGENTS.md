@@ -1,15 +1,39 @@
 # AGENTS.md
 
-qnvim is a Qt Creator plugin that embeds a real Neovim. Neovim runs the
-editing engine; Qt Creator's editor widgets render the text and provide the
-views (splits). Neovim windows map to editor views, buffers to documents.
+qnvim is a Qt Creator plugin that embeds a real Neovim. It has two modes,
+selected in Preferences > QNVim (restart required):
+
+- **GUI mode** (default, `src/gui/`): neovim-qt's `NeovimQt::Shell` draws
+  Neovim's whole screen inside the current editor; Qt Creator gets one
+  lightweight `NvimEditor`/`NvimDocument` per file buffer. Protocol and design:
+  `.claude/skills/nvim-gui-protocol` and `.claude/skills/qtc-editor-integration`,
+  user docs: `docs/gui-mode.md`.
+- **Classic mode** (`src/qnvimcore.*` and the rest of `src/`): Neovim runs the
+  editing engine; Qt Creator's editor widgets render the text and provide the
+  views (splits). Neovim windows map to editor views, buffers to documents.
+
+## Sub-tasks: agents and skills
+
+| Task | Agent (`.claude/agents/`) | Skills (`.claude/skills/`) |
+|---|---|---|
+| Qt Creator API questions, version ports | `qtc-api-researcher` | `qtc-api-port` |
+| C++ changes (GUI mode, plugin, settings) | `qtc-plugin-developer` | `qtc-editor-integration`, `nvim-gui-protocol` |
+| Neovim side (`qnvim_gui.lua`, `:Qtc`) | `nvim-lua-developer` | `nvim-gui-protocol` |
+| Build, compile check, automatic tests | `build-verifier` | `qnvim-build`, `qnvim-gui-testing` |
+| Review before commit | `code-reviewer` | — |
+| Docs and changelog | `docs-writer` | — |
+| Release / package | — | `qnvim-release` |
+
+Without the Qt Creator development package (offline, blocked download.qt.io),
+`tools/compilecheck/run.sh --tests` compiles against Qt Creator's source
+headers and runs the GUI tests.
 
 Use only Qt Creator's public API (`Core::EditorManager`, `Core::IEditor`, ...).
 Qt Creator sources are fine to read; do not link private headers.
 
 ## Build and run (macOS)
 
-The test Qt Creator lives in `external/qtcreator/dist-Darwin-20.0.1/` (not
+The test Qt Creator lives in `external/qtcreator/dist-Darwin-20.0.2/` (not
 committed; its version must match `external/qtcreator/version.cmake`). The
 build here uses Homebrew Qt, whose frameworks are linked by absolute path, so
 every rebuild must be retargeted before the plugin can load.
@@ -22,21 +46,21 @@ commands remain here for when it fails or a variation is needed:
 cmake --build build --target QNVim -j8
 tools/RetargetPluginQt.sh
 cp "build/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib" \
-   "external/qtcreator/dist-Darwin-20.0.1/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
+   "external/qtcreator/dist-Darwin-20.0.2/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
 codesign --force --sign - \
-   "external/qtcreator/dist-Darwin-20.0.1/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
+   "external/qtcreator/dist-Darwin-20.0.2/Qt Creator.app/Contents/PlugIns/qtcreator/libQNVim.dylib"
 ```
 
 Run from the repo root with plugin logging:
 
 ```sh
 QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
-  "external/qtcreator/dist-Darwin-20.0.1/Qt Creator.app/Contents/MacOS/Qt Creator" \
+  "external/qtcreator/dist-Darwin-20.0.2/Qt Creator.app/Contents/MacOS/Qt Creator" \
   src/qnvimcore.h src/qnvimcore.cpp
 ```
 
 - Logs use `qDebug(Main)`; the category is `qtcreator.plugin.qnvim`.
-- SDK headers: `external/qtcreator/dist-Darwin-20.0.1/Qt Creator.sdk/...`.
+- SDK headers: `external/qtcreator/dist-Darwin-20.0.2/Qt Creator.sdk/...`.
 - Crash reports: `~/Library/Logs/DiagnosticReports/`.
 - Stop only the test Qt Creator and its child
   `nvim --embed --cmd let g:QNVIM=1`. **Never kill other `nvim` processes** —
@@ -54,7 +78,19 @@ QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
   user reproduce once, read the prefix, then remove the instrumentation before
   committing.
 
-## Gotchas
+## Gotchas (GUI mode)
+
+- The Shell is shared by all editors and never owned by an editor host; a host
+  must `release()` it before it is deleted.
+- Calls into Neovim's Lua glue go through `NvimGuiSession::luaCall()`; they are
+  queued until the UI attached (Neovim with `--embed` runs its startup, and so
+  defines `QNVimGui`, only after `nvim_ui_attach`).
+- Guard every Neovim <-> Qt Creator sync against loops (`m_syncingFromNvim`,
+  `closingFromNvim`, `m_nvimCurrentFile`).
+- The editor id `QNVim.NeovimGuiEditor` is written into the user's
+  `EditorManager/PreferredEditorFactories`; never rename it.
+
+## Gotchas (classic mode)
 
 - The bundled NeovimQt bindings do not expose `nvim_exec`/`nvim_exec2`. Use
   `nvim_command`, `nvim_eval`, `nvim_call_function`, `nvim_open_win`, ...

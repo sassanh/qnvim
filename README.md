@@ -1,18 +1,42 @@
 # qnvim
 
 qnvim is a [Qt Creator](https://www.qt.io/product/development-tools) plugin that
-embeds a real [Neovim](https://neovim.io) and uses it as the editing engine
-behind Qt Creator's text editors. Neovim owns the buffers, windows, cursor,
-command line and messages; Qt Creator renders the text and provides the IDE
-around it.
+embeds a real [Neovim](https://neovim.io) as Qt Creator's code editor. It has
+two modes:
 
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=twwnnduujzw">
-    <img src="https://user-images.githubusercontent.com/1270688/51085365-02e51900-174d-11e9-92f7-c6daa5ec33de.gif" alt="qnvim demo"/>
-  </a>
-</p>
+- **Neovim GUI** (default): Neovim's whole screen is drawn in Qt Creator's
+  editor area, like nvim-qt. Every plugin, window, menu, the command line and
+  messages look and behave exactly as in Neovim; Qt Creator keeps its project
+  tree, builds, debugger, locator and output panes around it. See
+  [Neovim GUI mode](docs/gui-mode.md).
+- **Classic**: Neovim owns the buffers, windows, cursor, command line and
+  messages; Qt Creator's own text editors render the text.
+
+## Screenshots
+
+Neovim GUI mode (the default): Neovim's windows, bufferline, statusline and
+plugins are drawn in Qt Creator's editor area, with the project tree, open
+documents and output panes around them.
+
+![qnvim GUI mode in Qt Creator](docs/images/gui-mode-editor.png)
+
+Qt Creator actions from Neovim: `:Qtc` opens the action list with the configured
+`vim.ui.select` provider and runs the selected action in Qt Creator.
+
+![Qt Creator action picker opened from Neovim with :Qtc](docs/images/gui-mode-qtc.png)
+
+Telescope file finding from Neovim: `<Space><Space>` opens LazyVim's file
+picker with fuzzy search, a preview of the selected file and its results list.
+
+![Telescope file picker opened from Neovim with Space Space](docs/images/gui-mode-picker.png)
+
+An older classic-mode demo is on
+[YouTube](https://www.youtube.com/watch?v=twwnnduujzw).
 
 ## Features
+
+The list below describes classic mode; for GUI mode see
+[Neovim GUI mode](docs/gui-mode.md).
 
 - **A real Neovim.** qnvim spawns the `nvim` found in `PATH` and runs your
   configuration and plugins. Neovim is not emulated.
@@ -32,7 +56,7 @@ See [Features](docs/features.md) for the full behavior.
 
 ## Requirements
 
-- Qt Creator matching the plugin version. `master` targets Qt Creator 20.0.1;
+- Qt Creator matching the plugin version. `master` targets Qt Creator 20.0.2;
   see [`external/qtcreator/version.cmake`](external/qtcreator/version.cmake).
 - Neovim in `PATH`. qnvim is developed against Neovim 0.12.6; older releases
   may work but are not tested.
@@ -78,4 +102,5 @@ in [Limitations](docs/limitations.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Release builds include third-party code; see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

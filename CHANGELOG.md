@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- `THIRD-PARTY-NOTICES.md` with the license notices of neovim-qt (ISC) and msgpack-c (Boost), which are linked into the plugin; release archives now contain it and `LICENSE` under `QNVim-licenses/` next to the plugin.
+
+- **Neovim GUI mode** (the new default, **Preferences > QNVim > General > Mode**): Neovim's own screen is drawn in Qt Creator's editor area by neovim-qt's Shell widget, so all plugins, windows, the command line, messages, completion and `PopUp` menus and floating windows appear exactly as in Neovim. Qt Creator gets one editor per file buffer, so opening files and jumping to lines from the project tree, locator, compile output, search results and the debugger, the open documents list, the modified marker and "save all"/save before build keep working. Neovim becomes the default editor of all text MIME types through Qt Creator's own per-type default editor setting (excluded types and "Open With" stay available). `:Qtc {action}` (with completion, or a `vim.ui.select` picker without an argument) triggers any Qt Creator action; `:Build`, `:Run`, `:Debug`, `:Locator`, ... are shortcuts. Keys go to Neovim except a configurable list of Qt Creator shortcuts. **Tools > QNVim** has **Show Neovim** and **Restart Neovim**. See `docs/gui-mode.md`.
+
+- `tools/compilecheck/`: compiles the plugin against Qt Creator's source headers when the development package cannot be downloaded (see `docs/building.md`).
+
+- `tests/gui/`: a protocol test for the GUI mode's Neovim side (`test_protocol.py`, real Neovim, no Qt Creator) and an offscreen smoke test of the Shell widget with qnvim's startup arguments (`-DQNVIM_BUILD_TESTS=ON`, target `qnvim_gui_smoke_run`).
+
 - The command line, messages and completion menu can be rendered by Neovim plugins such as noice.nvim: **Preferences > QNVim > Command line, messages and completion menu** selects between **Rendered by QNVim** (the default) and **Rendered by Neovim plugins**. The setting is applied when qnvim starts; in plugin mode qnvim no longer claims `ext_messages`, `ext_cmdline`, `ext_popupmenu` or `ext_wildmenu`, so plugins that defer to the host UI can take over.
 
 - `./quick-run.sh` runs the development loop in one command: it configures and builds the plugin, installs it into the Qt Creator downloaded under `external/qtcreator/` (retargeting it to the bundled Qt on macOS), stops a running instance and starts it with qnvim's logging enabled.
@@ -17,6 +25,12 @@ All notable changes to this project will be documented in this file. This projec
 - Floating windows (completion menus, hover popups, `fzf-lua`/`telescope` pickers, the dashboard, ...) are shown: each one appears as an overlay in Qt Creator's main window, with the text, colors and attributes Neovim reports for it. The main window is Neovim's screen, so a float Neovim anchors to the screen (the common picker or the dashboard, e.g.) is centered in it like in Neovim; a float anchored to a window — or one a plugin opened at the cursor's or the cmdline's cell of the editor's layout (`screenpos()`, nvim-cmp's menus) — is placed in the editor view that window is shown in, at the cursor or above the editor view's command line. The overlays are just views: they never take the keyboard focus and let the mouse through, so keys and clicks keep reaching Neovim.
 
 **Fixed**
+
+- GUI mode: Neovim no longer starts with `E484: Can't open file .../runtime/plugin/nvim_gui_shim.vim`: the directory for nvim-qt's GUI shim was not created in Qt Creator's cache, so the shim was never written. Only files that exist are passed to Neovim now, and the smoke test extracts the files into an empty directory and checks that Neovim starts without error messages.
+
+- GUI mode: the warning that a font "reports bad fixed pitch metrics" (Qt Creator's default Source Code Pro does) is no longer shown in Neovim at every start; it goes to qnvim's log. The font is used either way; real font errors are still shown.
+
+- Linking the plugin no longer fails with toolchains that do not build position-independent code by default (`relocation R_X86_64_32 against .rodata can not be used when making a shared object`): the static neovim-qt and msgpack-c libraries linked into the plugin are now always built with `-fPIC`.
 
 - Quitting Qt Creator no longer crashes in qnvim's shutdown when the editor that owned the line-number column was destroyed first: the column is a child of that editor, so it is now tracked with a `QPointer` and detached from an editor that is about to close, even if another editor has become current.
 
@@ -47,6 +61,8 @@ All notable changes to this project will be documented in this file. This projec
 - `tools/RetargetPluginQt.sh` derives the retargeted framework path from the original one instead of assuming a `Versions/A` layout, so it also handles frameworks with other layouts.
 
 **Changed**
+
+- Target Qt Creator 20.0.2 (compatible with all 20.0.x releases).
 
 - Qt Creator's "Enable text wrapping" setting (Text Editor → Display) and Neovim's `wrap` option are now kept in sync: changing either one changes the other, so the editor's wrapping always agrees with Neovim. The setting follows the current window's option, while toggling the setting applies it to all Neovim windows (and to windows created later).
 

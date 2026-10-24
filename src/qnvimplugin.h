@@ -5,6 +5,9 @@
 #include <utils/result.h>
 
 namespace QNVim {
+namespace Gui {
+class NvimGuiSession;
+}
 namespace Internal {
 
 class QNVimCore;
@@ -26,7 +29,13 @@ class QNVimPlugin : public ExtensionSystem::IPlugin {
     void toggleQNVim();
 
   private:
+    void setupClassicMode();
+    void setupGuiMode();
+    void showNeovim();
+
+    bool m_guiMode = false;
     std::unique_ptr<QNVimCore> m_core;
+    std::unique_ptr<Gui::NvimGuiSession> m_guiSession;
     std::unique_ptr<QNVimSettingsPage> m_settingsPage;
 };
 

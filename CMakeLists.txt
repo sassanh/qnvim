@@ -12,6 +12,16 @@ endif()
 project(QNVim)
 
 option(FETCH_QTC "Download Qt Creator development files automatically" ON)
+option(QNVIM_BUILD_TESTS "Build the GUI mode smoke test (tests/gui)" OFF)
+set(QNVIM_TEST_NVIM "nvim" CACHE STRING "Neovim used by the GUI smoke test")
+
+# neovim-qt, its GUI library and msgpack-c are static libraries linked into the
+# plugin, a shared object, so they must be position independent. Toolchains
+# that do not default to -fPIC (e.g. a distribution's GCC) otherwise fail with
+# "relocation R_X86_64_32 against `.rodata' can not be used when making a
+# shared object". Must be set before add_subdirectory(external), where the
+# targets are created.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_subdirectory(external)
 
@@ -69,3 +79,7 @@ if (APPLE)
 endif()
 
 add_subdirectory(src)
+
+if (QNVIM_BUILD_TESTS)
+  add_subdirectory(tests/gui)
+endif()

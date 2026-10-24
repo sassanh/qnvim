@@ -1,6 +1,9 @@
 #include "qnvimplugin.h"
 
 #include "qnvimcore.h"
+#include "qnvimsettings.h"
+#include "gui/nvimguiconstants.h"
+#include "gui/nvimguisession.h"
 #include "qnvimsettingspage.h"
 #include "log.h"
 #include "qnvimconstants.h"
@@ -8,6 +11,8 @@
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/ieditor.h>
 
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditorconstants.h>
@@ -56,6 +61,22 @@ Utils::Result<> QNVimPlugin::initialize(const QStringList &arguments) {
                                          Utils::FilePath());
     m_settingsPage = std::make_unique<QNVimSettingsPage>();
 
+    Core::ActionContainer *menu = Core::ActionManager::createMenu(Constants::MENU_ID);
+    menu->menu()->setTitle(tr("QNVim"));
+    Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addMenu(menu);
+
+    qunsetenv("NVIM_LISTEN_ADDRESS");
+
+    m_guiMode = settings().editorMode() == EditorMode::NeovimGui;
+    if (m_guiMode)
+        setupGuiMode();
+    else
+        setupClassicMode();
+
+    return {};
+}
+
+void QNVimPlugin::setupClassicMode() {
     new HelpEditorFactory();
     new TerminalEditorFactory();
 
@@ -64,30 +85,61 @@ Utils::Result<> QNVimPlugin::initialize(const QStringList &arguments) {
                                                              Core::Context(Core::Constants::C_GLOBAL));
     cmd->setDefaultKeySequence(QKeySequence(tr("Alt+Shift+V,Alt+Shift+V")));
     connect(action, &QAction::triggered, this, &QNVimPlugin::toggleQNVim);
-
-    Core::ActionContainer *menu = Core::ActionManager::createMenu(Constants::MENU_ID);
-    menu->menu()->setTitle(tr("QNVim"));
-    menu->addAction(cmd);
-    Core::ActionManager::actionContainer(Core::Constants::M_TOOLS)->addMenu(menu);
-
-    qunsetenv("NVIM_LISTEN_ADDRESS");
+    Core::ActionManager::actionContainer(Constants::MENU_ID)->addAction(cmd);
 
     m_core = std::make_unique<QNVimCore>();
+}
 
-    return {};
+void QNVimPlugin::setupGuiMode() {
+    // The factory must exist before Core reads the preferred editors (in its
+    // extensionsInitialized(), after ours).
+    m_guiSession = std::make_unique<Gui::NvimGuiSession>();
+
+    Core::ActionContainer *menu = Core::ActionManager::actionContainer(Constants::MENU_ID);
+
+    auto showAction = new QAction(tr("Show Neovim"), this);
+    Core::Command *showCmd = Core::ActionManager::registerAction(
+        showAction, Gui::Constants::FOCUS_ACTION_ID, Core::Context(Core::Constants::C_GLOBAL));
+    showCmd->setDefaultKeySequence(QKeySequence(tr("Alt+Shift+V,Alt+Shift+V")));
+    connect(showAction, &QAction::triggered, this, &QNVimPlugin::showNeovim);
+    menu->addAction(showCmd);
+
+    auto restartAction = new QAction(tr("Restart Neovim"), this);
+    Core::Command *restartCmd = Core::ActionManager::registerAction(
+        restartAction, Gui::Constants::RESTART_ACTION_ID, Core::Context(Core::Constants::C_GLOBAL));
+    connect(restartAction, &QAction::triggered, this, [this] {
+        if (m_guiSession)
+            m_guiSession->restart();
+    });
+    menu->addAction(restartCmd);
+}
+
+void QNVimPlugin::showNeovim() {
+    // Focus an editor that shows Neovim, or open an empty one (Neovim needs an
+    // editor to be drawn in, e.g. for its start screen without any file).
+    for (Core::IEditor *editor : Core::EditorManager::visibleEditors()) {
+        if (editor->document()->id() == Gui::Constants::DOCUMENT_ID) {
+            Core::EditorManager::activateEditor(editor);
+            return;
+        }
+    }
+    QString title = tr("Neovim");
+    Core::EditorManager::openEditorWithContents(Gui::Constants::EDITOR_ID, &title);
 }
 
 void QNVimPlugin::extensionsInitialized() {
-    // Retrieve objects from the plugin manager's object pool
-    // In the extensionsInitialized function, a plugin can be sure that all
-    // plugins that depend on it are completely initialized.
+    // Runs before Core's extensionsInitialized(), which reads the preferred
+    // editor of each MIME type.
+    if (m_guiMode)
+        m_guiSession->takeOverTextEditors();
+    else
+        Gui::NvimGuiSession::releaseTextEditors();
 }
 
 ExtensionSystem::IPlugin::ShutdownFlag QNVimPlugin::aboutToShutdown() {
     m_core = nullptr;
-    // Save settings
-    // Disconnect from signals that are not needed during shutdown
-    // Hide UI (if you add UI that is not in the main window directly)
+    if (m_guiSession)
+        m_guiSession->shutdown();
     return SynchronousShutdown;
 }
 

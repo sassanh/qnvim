@@ -1,5 +1,7 @@
 # qnvim documentation
 
+- [Neovim GUI mode](gui-mode.md) — Neovim's own screen in the editor area:
+  how it works with Qt Creator, keys, `:Qtc` commands, settings.
 - [Features](features.md) — what qnvim does and how Neovim and Qt Creator behave
   together.
 - [Configuration](configuration.md) — `qnvim.vim`, the RPC channel, and Ex

@@ -1,3 +1,20 @@
+# GUI mode resources: qnvim's Lua glue and nvim-qt's GUI shim (:GuiFont, ...),
+# taken from the neovim-qt sources so it always matches the Shell widget.
+set(_shim "${QNVIM_NEOVIMQT_SOURCE_DIR}/src/gui/runtime/plugin/nvim_gui_shim.vim")
+if (NOT EXISTS "${_shim}")
+  message(FATAL_ERROR "neovim-qt GUI shim not found at ${_shim}")
+endif()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/qnvim_gui.qrc" CONTENT
+"<RCC>
+    <qresource prefix=\"/qnvim/gui\">
+        <file alias=\"qnvim_gui.lua\">${CMAKE_CURRENT_SOURCE_DIR}/gui/qnvim_gui.lua</file>
+        <file alias=\"nvim_gui_shim.vim\">${_shim}</file>
+    </qresource>
+</RCC>
+")
+set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/qnvim_gui.qrc"
+  PROPERTIES AUTORCC_OPTIONS "--compress-algo;zlib")
+
 add_qtc_plugin(QNVim
   PLUGIN_DEPENDS
     QtCreator::Core
@@ -29,6 +46,14 @@ add_qtc_plugin(QNVim
     qnvimsettingspage.h
     cmdline.cpp
     cmdline.h
+    gui/nvimguiargs.cpp
+    gui/nvimguiargs.h
+    gui/nvimguiconstants.h
+    gui/nvimguieditor.cpp
+    gui/nvimguieditor.h
+    gui/nvimguisession.cpp
+    gui/nvimguisession.h
+    ${CMAKE_CURRENT_BINARY_DIR}/qnvim_gui.qrc
     textediteventfilter.cpp
     textediteventfilter.h
     textpos.cpp
@@ -39,3 +64,15 @@ add_qtc_plugin(QNVim
 # qt_resourceFeatureZstd, which some QtCore versions do not export (the Qt 6.11
 # of the test Qt Creator, for one), and the plugin would fail to load there.
 set_source_files_properties(qnvim.qrc PROPERTIES AUTORCC_OPTIONS "--compress-algo;zlib")
+
+# License texts travel with release archives (tools/ci/Package.cmake packs the
+# install tree), as MIT and neovim-qt's ISC license require.
+if (IDE_PLUGIN_PATH)
+  set(_qnvim_license_dir "${IDE_PLUGIN_PATH}/QNVim-licenses")
+else()
+  set(_qnvim_license_dir "lib/qtcreator/plugins/QNVim-licenses")
+endif()
+install(FILES
+  "${PROJECT_SOURCE_DIR}/LICENSE"
+  "${PROJECT_SOURCE_DIR}/THIRD-PARTY-NOTICES.md"
+  DESTINATION "${_qnvim_license_dir}")
