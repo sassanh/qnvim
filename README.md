@@ -12,11 +12,26 @@ two modes:
 - **Classic**: Neovim owns the buffers, windows, cursor, command line and
   messages; Qt Creator's own text editors render the text.
 
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=twwnnduujzw">
-    <img src="https://user-images.githubusercontent.com/1270688/51085365-02e51900-174d-11e9-92f7-c6daa5ec33de.gif" alt="qnvim demo"/>
-  </a>
-</p>
+## Screenshots
+
+Neovim GUI mode (the default): Neovim's windows, bufferline, statusline and
+plugins are drawn in Qt Creator's editor area, with the project tree, open
+documents and output panes around them.
+
+![qnvim GUI mode in Qt Creator](docs/images/gui-mode-editor.png)
+
+Qt Creator actions from Neovim: `:Qtc` opens the action list with the configured
+`vim.ui.select` provider and runs the selected action in Qt Creator.
+
+![Qt Creator action picker opened from Neovim with :Qtc](docs/images/gui-mode-qtc.png)
+
+Telescope file finding from Neovim: `<Space><Space>` opens LazyVim's file
+picker with fuzzy search, a preview of the selected file and its results list.
+
+![Telescope file picker opened from Neovim with Space Space](docs/images/gui-mode-picker.png)
+
+An older classic-mode demo is on
+[YouTube](https://www.youtube.com/watch?v=twwnnduujzw).
 
 ## Features
 
