@@ -15,7 +15,6 @@ struct LineColumn {
 LineColumn lineColumn(QStringView text, int utf16Position);
 int lineStart(QStringView text, int line);
 int lineEnd(QStringView text, int line);
-int utf16Column(QStringView text, int line, int byteColumn);
 int positionFor(QStringView text, int line, int byteColumn);
 
 } // namespace Internal

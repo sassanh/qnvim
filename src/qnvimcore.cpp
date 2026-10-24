@@ -1337,10 +1337,10 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
         return;
 
     int line = pos[0].toInt();
-    int col = utf16Column(mText, line, pos[1].toInt());
+    int col = pos[1].toInt();
 
     int vLine = vPos[0].toInt();
-    int vCol = utf16Column(mText, vLine, vPos[1].toInt());
+    int vCol = vPos[1].toInt();
 
     mMode = mode;
     st.cursorLine = line;
@@ -1360,6 +1360,17 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
 
     int anchor = positionFor(mText, vLine, vPos[1].toInt());
     int position = positionFor(mText, line, pos[1].toInt());
+
+    // Vim's visual ends are inclusive; Qt's end is exclusive. Step past the
+    // whole character, not one UTF-16 code unit, so a surrogate pair stays
+    // together.
+    const auto nextPosition = [&](int p) {
+        if (p + 1 < mText.size() and mText[p].isHighSurrogate()
+            and mText[p + 1].isLowSurrogate())
+            return p + 2;
+        return qMin(p + 1, int(mText.size()));
+    };
+
     if (mMode == "V") {
         if (anchor < position) {
             anchor = lineStart(mText, vLine);
@@ -1379,9 +1390,9 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
 
     } else if (mMode == "v") {
         if (anchor > position)
-            ++anchor;
+            anchor = nextPosition(anchor);
         else
-            ++position;
+            position = nextPosition(position);
 
         QTextCursor cursor = textEditor->textCursor();
         cursor.setPosition(anchor);
@@ -1392,9 +1403,9 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
             textEditor->setTextCursor(cursor);
     } else if (mMode == "\x16") { // VISUAL BLOCK
         if (vCol > col)
-            ++anchor;
+            anchor = nextPosition(anchor);
         else
-            ++position;
+            position = nextPosition(position);
 
         auto document = textEditor->textCursor().document();
         const auto& tabs = textEditor->textDocument()->tabSettings();

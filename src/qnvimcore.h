@@ -120,8 +120,8 @@ class QNVimCore : public QObject {
         bool bound = false;
         // The buffer shown in the window, as far as qnvim knows.
         int buffer = 0;
-        // Cursor position last synced with this window: 1-based line and
-        // column (0 while nothing was synced).
+        // Cursor and visual anchor positions last synced with this window:
+        // 1-based line and UTF-8 byte column (0 while nothing was synced).
         int cursorLine = 0;
         int cursorCol = 0;
         int vCursorLine = 0;

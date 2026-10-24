@@ -31,16 +31,12 @@ int lineEnd(QStringView text, int line) {
     return newline < 0 ? int(text.size()) : int(newline);
 }
 
-int utf16Column(QStringView text, int line, int byteColumn) {
+int positionFor(QStringView text, int line, int byteColumn) {
     const int start = lineStart(text, line);
     const qsizetype newline = text.indexOf(u'\n', start);
     const QStringView lineChars = text.mid(start, (newline < 0 ? text.size() : newline) - start);
     const QByteArray bytes = lineChars.toUtf8().left(qMax(0, byteColumn - 1));
-    return int(QString::fromUtf8(bytes).size()) + 1;
-}
-
-int positionFor(QStringView text, int line, int byteColumn) {
-    return lineStart(text, line) + utf16Column(text, line, byteColumn) - 1;
+    return start + int(QString::fromUtf8(bytes).size());
 }
 
 } // namespace Internal
