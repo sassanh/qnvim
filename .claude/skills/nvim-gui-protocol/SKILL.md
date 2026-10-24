@@ -1,92 +1,92 @@
 ---
 name: nvim-gui-protocol
-description: Das RPC-Protokoll zwischen Neovim (src/gui/qnvim_gui.lua) und Qt Creator (src/gui/nvimguisession.cpp) im GUI-Modus verstehen und erweitern – neue Ereignisse, neue Lua-Funktionen, neue :Qtc-Befehle, Startreihenfolge. Verwenden bei jeder Änderung an der Synchronisation zwischen Neovim-Buffern und Qt-Creator-Dokumenten.
+description: Understand and extend the RPC protocol between Neovim (src/gui/qnvim_gui.lua) and Qt Creator (src/gui/nvimguisession.cpp) in GUI mode — new events, new Lua functions, new :Qtc commands, startup order. Use for any change to the synchronization between Neovim buffers and Qt Creator documents.
 ---
 
-# GUI-Modus: Protokoll Neovim ⇄ Qt Creator
+# GUI mode: Neovim ⇄ Qt Creator protocol
 
-## Architektur in einem Satz
+## Architecture in one sentence
 
-Ein Neovim (`nvim --embed`), gezeichnet von neovim-qt's `NeovimQt::Shell` im
-gerade aktiven `NvimEditor`; pro gelistetem Datei-Buffer ein leichtgewichtiges
-`NvimDocument` in Qt Creator, das nur Dateiname, `'modified'` und Cursor spiegelt.
+One Neovim (`nvim --embed`), drawn by neovim-qt's `NeovimQt::Shell` in the
+currently active `NvimEditor`; one lightweight `NvimDocument` per listed file
+buffer in Qt Creator, mirroring only the file name, `'modified'`, and cursor.
 
-## Richtung Neovim → Qt Creator
+## Direction Neovim → Qt Creator
 
-`rpcnotify(g:qnvim_gui_channel, 'QNVimGui', <event>, ...)`, verarbeitet in
+`rpcnotify(g:qnvim_gui_channel, 'QNVimGui', <event>, ...)`, handled in
 `NvimGuiSession::onNotification()`:
 
-| Event | Argumente | Qt-Creator-Reaktion |
+| Event | Arguments | Qt Creator reaction |
 |---|---|---|
-| `bufenter` | path | Dokument öffnen/aktivieren (`openEditor(path, EDITOR_ID)`) mit `m_syncingFromNvim` |
-| `bufdelete` | path | Dokument schließen, `closingFromNvim = true` |
+| `bufenter` | path | open/activate the document (`openEditor(path, EDITOR_ID)`) with `m_syncingFromNvim` |
+| `bufdelete` | path | close the document, `closingFromNvim = true` |
 | `modified` | path, bool | `NvimDocument::setModifiedFromNvim()` |
 | `written` | path | modified = false |
-| `cursor` | path, line, utf16col | `currentLine()/currentColumn()` (entprellt 150 ms) |
-| `action` | id | `ActionManager::command(id)->action()->trigger()` (verzögert) |
-| `actions` | – | Aktionsliste neu senden |
+| `cursor` | path, line, utf16col | `currentLine()/currentColumn()` (debounced 150 ms) |
+| `action` | id | `ActionManager::command(id)->action()->trigger()` (deferred) |
+| `actions` | – | send the action list again |
 
-Gemeldet werden nur **gelistete normale Datei-Buffer** (`buftype == ''`,
-`buflisted`, Name ohne `scheme://`). Floats lösen kein `bufenter` aus.
+Only **listed normal file buffers** are reported (`buftype == ''`, `buflisted`,
+name without `scheme://`). Floats do not trigger `bufenter`.
 
-## Richtung Qt Creator → Neovim
+## Direction Qt Creator → Neovim
 
-`luaeval(code, _A)` über `NvimGuiSession::luaCall()`. Ein Argument wird direkt
-`_A`, mehrere werden zur Liste `_A[1], _A[2], …`.
+`luaeval(code, _A)` via `NvimGuiSession::luaCall()`. A single argument is passed
+as `_A`; multiple arguments become the list `_A[1], _A[2], …`.
 
-| Funktion | Zweck |
+| Function | Purpose |
 |---|---|
-| `QNVimGui.open(path, line, col, center)` | Datei zeigen; vorhandenes Fenster bevorzugt, Spezialfenster (Floats, Trees, quickfix, terminal, `winfixbuf`) meiden; `col` ist UTF-16 (Qt) und wird in Bytes umgerechnet |
-| `QNVimGui.add(path)` | Buffer anlegen und listen, ohne umzuschalten |
-| `QNVimGui.close(path)` | `nvim_buf_delete(force)`; unterdrückt das eigene `bufdelete` |
-| `QNVimGui.write(path)` | synchron (QEventLoop, 10 s) – Rückgabe `''` oder Fehlertext |
-| `QNVimGui.set_actions(list)` | `[[id, beschreibung], …]` für `:Qtc`-Vervollständigung |
+| `QNVimGui.open(path, line, col, center)` | show the file; prefer an existing window, avoid special windows (floats, trees, quickfix, terminal, `winfixbuf`); `col` is UTF-16 (Qt) and is converted to bytes |
+| `QNVimGui.add(path)` | create and list the buffer without switching |
+| `QNVimGui.close(path)` | `nvim_buf_delete(force)`; suppresses its own `bufdelete` |
+| `QNVimGui.write(path)` | synchronous (QEventLoop, 10 s) — returns `''` or an error message |
+| `QNVimGui.set_actions(list)` | `[[id, description], …]` for `:Qtc` completion |
 
-## Startreihenfolge (nicht verändern ohne Grund)
+## Startup order (do not change without reason)
 
-1. `NeovimConnector::spawn(nvimGuiArguments(...))` – Lua-Glue per
-   `--cmd lua dofile(...)` (vor init.lua, unabhängig von `'runtimepath'`, das
-   lazy.nvim zurücksetzt), Shim per `--cmd source` **und** auf `rtp`.
-2. `ready` → `nvim_set_var('qnvim_gui_channel', channel)`. Mit `--embed` wartet
-   Neovim mit dem Startup bis zum `ui_attach`, die Variable ist also vor
-   `VimEnter` gesetzt.
-3. Shell wird sichtbar → `ui_attach` → `neovimAttachmentChanged(true)` →
-   `m_ready`, Aktionsliste, `:cd`, dann die gesammelten `m_pending`-Aufrufe.
-   **Vor dem Attach existiert `QNVimGui` noch nicht** – deshalb Warteschlange.
+1. `NeovimConnector::spawn(nvimGuiArguments(...))` — Lua glue via
+   `--cmd lua dofile(...)` (before init.lua, independent of `'runtimepath'`,
+   which lazy.nvim resets), shim via `--cmd source` **and** on `rtp`.
+2. `ready` → `nvim_set_var('qnvim_gui_channel', channel)`. With `--embed`,
+   Neovim waits with startup until `ui_attach`, so the variable is set before
+   `VimEnter`.
+3. Shell becomes visible → `ui_attach` → `neovimAttachmentChanged(true)` →
+   `m_ready`, action list, `:cd`, then the queued `m_pending` calls.
+   **Before attach, `QNVimGui` does not exist yet** — hence the queue.
 
-## Schleifen vermeiden
+## Avoid loops
 
-- Qt Creator → Neovim → `bufenter` → Qt Creator: `m_nvimCurrentFile` wird vor
-  dem Lua-Aufruf gesetzt; `onBufEnter()` tut nichts, wenn der aktuelle Editor
-  schon die Datei zeigt.
+- Qt Creator → Neovim → `bufenter` → Qt Creator: `m_nvimCurrentFile` is set
+  before the Lua call; `onBufEnter()` does nothing if the current editor already
+  shows the file.
 - Neovim → Qt Creator → `currentEditorChanged` → Neovim: `m_syncingFromNvim`.
-- Schließen: `closingFromNvim` (Neovim hat schon gelöscht) bzw. `M._closing`
-  in Lua (Qt Creator hat gelöscht).
+- Closing: `closingFromNvim` (Neovim has already deleted) or `M._closing` in Lua
+  (Qt Creator has deleted).
 
-## Neues Ereignis hinzufügen – Ablauf
+## Adding a new event — procedure
 
-1. Lua: Autocmd in `qnvim_gui.lua` mit `notify('<event>', ...)`; Pfade immer
-   über `file_path(buf)`/`normalize()`.
-2. C++: Zweig in `onNotification()`; Dokument über `documentFor(path)` (kanonische
-   Pfade, Symlinks!).
-3. Test in `tests/gui/test_protocol.py` (Muster: Aktion auslösen,
-   `self.events()` lesen, Tupel prüfen).
-4. Doku: Tabelle in `docs/gui-mode.md` falls benutzersichtbar.
+1. Lua: autocmd in `qnvim_gui.lua` with `notify('<event>', ...)`; always pass
+   paths through `file_path(buf)`/`normalize()`.
+2. C++: branch in `onNotification()`; get the document via `documentFor(path)`
+   (canonical paths, symlinks!).
+3. Test in `tests/gui/test_protocol.py` (pattern: trigger an action, read
+   `self.events()`, check the tuple).
+4. Docs: table in `docs/gui-mode.md` if user-visible.
 
-## Neuer Benutzerbefehl
+## New user command
 
-Kurzbefehle stehen in der Tabelle `shortcuts` in `qnvim_gui.lua` (Name →
-Qt-Creator-Action-Id). Sie werden nur angelegt, wenn der Name frei ist. Ids
-findet man mit `:Qtc <Tab>` oder in den Qt-Creator-Quellen
+Shortcuts live in the `shortcuts` table in `qnvim_gui.lua` (name → Qt Creator
+action id). They are only created if the name is free. Find ids with
+`:Qtc <Tab>` or in the Qt Creator sources
 (`grep -rn 'registerAction(.*"Debugger\.' src/plugins`).
 
-## Fallstricke
+## Pitfalls
 
-- `luaeval` mit `nil`: `luaCall("…", {QVariant()})` übergibt `nil`.
-- `vim.str_byteindex`/`str_utfindex` haben in 0.10 und 0.11 andere Signaturen –
-  die Helfer probieren beide.
-- `CursorMoved` feuert bei API-Aufrufen nicht ohne Redraw; im Test
+- `luaeval` with `nil`: `luaCall("…", {QVariant()})` passes `nil`.
+- `vim.str_byteindex`/`str_utfindex` have different signatures in 0.10 and 0.11 —
+  the helpers try both.
+- `CursorMoved` does not fire on API calls without a redraw; in tests use
   `doautocmd CursorMoved`.
-- Klassischer Modus nutzt `rpcnotify(..., 'Gui', ...)` – nicht vermischen; der
-  Methodenname des GUI-Modus ist `QNVimGui` (`Constants::RPC_METHOD`). `'Gui'`
-  gehört im GUI-Modus der neovim-qt-Shell.
+- Classic mode uses `rpcnotify(..., 'Gui', ...)` — do not mix them; the GUI
+  mode's method name is `QNVimGui` (`Constants::RPC_METHOD`). In GUI mode,
+  `'Gui'` belongs to the neovim-qt Shell.

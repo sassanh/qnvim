@@ -1,48 +1,51 @@
 ---
 name: qnvim-release
-description: Eine qnvim-Version veröffentlichen oder ein installierbares Plugin-Archiv bauen – Version, CHANGELOG, Doku, CI-Builds für Linux/Windows/macOS, Archiv für „Plugin installieren…“. Verwenden, wenn ein Release, ein Paket oder ein Versions-Tag gewünscht ist.
+description: Publish a qnvim release or build an installable plugin archive — version, CHANGELOG, docs, CI builds for Linux/Windows/macOS, archive for "Install Plugin…". Use when a release, a package or a version tag is requested.
 ---
 
-# Release und Paketierung
+# Release and packaging
 
-## Vorbedingungen
+## Prerequisites
 
-- Alle Tests grün (Skill `qnvim-gui-testing`, Stufen 1–2; Stufe 3 manuell).
-- Echter Build gegen das qtcreator_dev-Paket der Zielversion (Skill `qnvim-build`,
-  Weg A). Der Compile-Check allein reicht **nicht** für ein Release.
+- All tests green (skill `qnvim-gui-testing`, stages 1–2; stage 3 manual).
+- A real build against the target version's qtcreator_dev package (skill
+  `qnvim-build`, path A). The compile check alone is **not** enough for a
+  release.
 
-## Schritte
+## Steps
 
-1. `CHANGELOG.md`: Abschnitt „Unreleased“ in `[<Version>](…/tree/v<Version>) (<Datum>)`
-   umbenennen, neuen leeren „Unreleased“-Abschnitt mit Compare-Link anlegen.
-   Die Plugin-Version kommt aus `IDE_VERSION` des SDK (`QNVim.json.in`).
-2. Doku prüfen: `README.md`, `docs/gui-mode.md`, `docs/limitations.md`,
-   `docs/building.md` (Versionen, neue Einstellungen/Befehle).
-3. Commit `docs: release v<Version>`; Tag `v<Version>` (nur auf Anweisung pushen).
-4. CI: `.github/workflows/build_cmake.yml` baut beim Tag für alle Plattformen
-   und hängt die Archive an (Details in `.github/workflows/README.md`;
-   Paketierung in `tools/ci/Package.cmake`).
+1. `CHANGELOG.md`: rename the "Unreleased" section to
+   `[<version>](…/tree/v<version>) (<date>)`, create a new empty "Unreleased"
+   section with a compare link. The plugin version comes from the SDK's
+   `IDE_VERSION` (`QNVim.json.in`).
+2. Check docs: `README.md`, `docs/gui-mode.md`, `docs/limitations.md`,
+   `docs/building.md` (versions, new settings/commands).
+3. Commit `docs: release v<version>`; tag `v<version>` (only push when
+   instructed).
+4. CI: `.github/workflows/build_cmake.yml` builds for all platforms on the tag
+   and attaches the archives (details in `.github/workflows/README.md`;
+   packaging in `tools/ci/Package.cmake`).
 
-## Lokales Archiv (zum Testen bei Nutzern)
+## Local archive (for testing with users)
 
-Genau wie die CI (`tools/ci/Package.cmake`): Qt Creators eigenes
-`build_plugin.py` aus dem heruntergeladenen SDK baut und verpackt.
+Same as CI (`tools/ci/Package.cmake`): Qt Creator's own `build_plugin.py` from
+the downloaded SDK builds and packages it.
 
 ```sh
-cmake -S . -B build            # lädt das SDK nach external/qtcreator/dist-<OS>-<Version>/
-QTC=external/qtcreator/dist-$(uname -s)-<Version>
+cmake -S . -B build            # downloads the SDK into external/qtcreator/dist-<OS>-<version>/
+QTC=external/qtcreator/dist-$(uname -s)-<version>
 python3 "$QTC/share/qtcreator/scripts/build_plugin.py" \
-    --name QNVim-<Version>-Linux-x64 --src . --build build-pkg \
-    --qt-path /pfad/zu/Qt/6.x/gcc_64 --qtc-path "$QTC" --output-path .
+    --name QNVim-<version>-Linux-x64 --src . --build build-pkg \
+    --qt-path /path/to/Qt/6.x/gcc_64 --qtc-path "$QTC" --output-path .
 ```
 
-(macOS: das Skript liegt unter `Qt Creator.app/Contents/Resources/scripts/`
-bzw. `Qt Creator.sdk/share/qtcreator/scripts/`; `Package.cmake` sucht alle
-Varianten.) Ergebnis ist ein `.7z`, das *Hilfe > Über Plugins > Plugin
-installieren…* direkt annimmt.
+(macOS: the script is under `Qt Creator.app/Contents/Resources/scripts/` or
+`Qt Creator.sdk/share/qtcreator/scripts/`; `Package.cmake` searches all
+variants.) The result is a `.7z` that *Help > About Plugins > Install Plugin…*
+accepts directly.
 
-## Nicht vergessen
+## Don't forget
 
-- macOS: Retarget auf das gebündelte Qt (`tools/RetargetPluginQt.sh`), codesign.
-- Neovim-Mindestversion in `README.md` prüfen (GUI-Modus: ≥ 0.10 getestet).
-- Release-Notes auf Deutsch/Englisch nach Wunsch; Inhalt aus dem CHANGELOG.
+- macOS: retarget to the bundled Qt (`tools/RetargetPluginQt.sh`), codesign.
+- Check the minimum Neovim version in `README.md` (GUI mode: tested with ≥ 0.10).
+- Release notes in German/English as desired; content from the CHANGELOG.

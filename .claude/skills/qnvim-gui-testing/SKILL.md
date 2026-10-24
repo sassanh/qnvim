@@ -1,64 +1,64 @@
 ---
 name: qnvim-gui-testing
-description: Den GUI-Modus testen – Protokolltest gegen echtes Neovim, Offscreen-Smoke-Test des Shell-Widgets mit Screenshot, und die manuelle Prüfliste in Qt Creator. Verwenden nach Änderungen an qnvim_gui.lua, der Session, den Startargumenten oder vor einem Release.
+description: Test GUI mode — protocol test against real Neovim, offscreen smoke test of the Shell widget with a screenshot, and the manual checklist in Qt Creator. Use after changes to qnvim_gui.lua, the session, the startup arguments, or before a release.
 ---
 
-# GUI-Modus testen
+# Testing GUI mode
 
-## 1. Protokolltest (schnell, kein Qt, kein Qt Creator)
+## 1. Protocol test (fast, no Qt, no Qt Creator)
 
 ```sh
 pip install pynvim
 python3 tests/gui/test_protocol.py --nvim "$(command -v nvim)"
 ```
 
-Startet Neovim wie das Plugin (`--embed`, Lua-Glue per `--cmd`) und spielt Qt
-Creators Rolle über msgpack-rpc. Deckt ab: Start-`bufenter`, `add` ohne Umschalten,
-`open` mit Zeile/Spalte (UTF-16 → Byte), Spezialfenster meiden, vorhandenes
-Fenster anspringen, `modified`/`written`/Schreiben auf Platte, stilles `close`,
-`bufdelete` bei `:bd`, entprellter `cursor`, Floats ohne `bufenter`, `:Qtc` +
-Kurzbefehle + Vervollständigung.
+Starts Neovim like the plugin (`--embed`, Lua glue via `--cmd`) and plays
+Qt Creator's role over msgpack-rpc. Covers: startup `bufenter`, `add` without
+switching, `open` with line/column (UTF-16 → byte), avoiding special windows,
+jumping to an existing window, `modified`/`written`/writing to disk, silent
+`close`, `bufdelete` on `:bd`, debounced `cursor`, floats without `bufenter`,
+`:Qtc` + shortcuts + completion.
 
-Neuer Test: Methode in `GuiProtocolTest`; Aktion ausführen, dann
-`ev = self.events()` (liest bis zu einem Sentinel) und Tupel prüfen.
+New test: add a method to `GuiProtocolTest`; trigger an action, then
+`ev = self.events()` (reads up to a sentinel) and check the tuple.
 
-## 2. Smoke-Test (echtes Shell-Widget, offscreen)
+## 2. Smoke test (real Shell widget, offscreen)
 
 ```sh
 cmake -S . -B build-check -DQNVIM_BUILD_TESTS=ON -DQNVIM_TEST_NVIM="$(command -v nvim)" ...
 cmake --build build-check --target qnvim_gui_smoke_run
-# oder: tools/compilecheck/run.sh --tests
+# or: tools/compilecheck/run.sh --tests
 ```
 
-Prüft: UI hängt an, Shim geladen (`:GuiFont`), Lua-Glue geladen, `bufenter`
-kommt an, Grid hat Inhalt und passende Größe, Completion-Menü wird von Neovim
-gezeichnet. Screenshots: `build-check/tests/gui/smoke.png` und `smoke-pum.png`
-– **ansehen** (Read-Tool), nicht nur PASS lesen: Syntaxfarben, Statuszeile,
-Cmdline unten, Popup unter dem Cursor.
+Checks: UI attaches, shim loaded (`:GuiFont`), Lua glue loaded, `bufenter`
+arrives, grid has content and the right size, completion menu is drawn by
+Neovim. Screenshots: `build-check/tests/gui/smoke.png` and `smoke-pum.png` —
+**look at them** (Read tool), don't just read PASS: syntax colors, statusline,
+cmdline at the bottom, popup under the cursor.
 
-## 3. Manuelle Prüfliste in Qt Creator (vor Release)
+## 3. Manual checklist in Qt Creator (before release)
 
-Mit `QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true'` starten.
+Start with `QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true'`.
 
-- [ ] Projekt öffnen, Datei aus dem Projektbaum → Neovim zeigt sie, Fokus in Neovim
-- [ ] Locator (`:Locator`) → Datei:Zeile springt an die Zeile
-- [ ] Compile-Fehler anklicken → richtige Zeile/Spalte
-- [ ] Ändern → `*` im Tab/Dropdown; `Ctrl+S` in Neovim (`:w`) → `*` weg
-- [ ] Ändern, `:Build` → Qt Creator speichert vorher (Datei auf Platte aktuell)
-- [ ] `:e andere.cpp`, Telescope/fzf-lua → Qt Creators aktuelles Dokument folgt
-- [ ] `:bd` → Dokument verschwindet aus „Offene Dokumente“
-- [ ] Dokument in Qt Creator schließen (geändert, „Nicht speichern“) → Buffer weg
-- [ ] Completion (nvim-cmp/blink), LSP-Hover, which-key, noice → sichtbar wie in nvim
-- [ ] `:Qtc` ohne Argument → Picker; `:Qtc Debugger.<Tab>` vervollständigt
-- [ ] `Ctrl+2`/`Alt+4` → Qt-Creator-Modus/Ausgabe (Durchreichung)
-- [ ] `.ui`-Datei öffnet weiterhin im Designer
-- [ ] „Öffnen mit“ → Qt-Creator-Texteditor geht noch
-- [ ] `:qa` → Dokumente schließen, nächste Datei startet frisches Neovim
-- [ ] Kaputte init.lua (`error()` am Anfang) → Meldung, keine Neustartschleife
-- [ ] Qt Creator beenden mit geänderter Datei → Speichern-Dialog, Speichern schreibt
-- [ ] Modus auf „Classic“ + Neustart → alte Texteditoren, keine Neovim-Zuordnungen mehr
+- [ ] Open project, open a file from the project tree → Neovim shows it, focus is in Neovim
+- [ ] Locator (`:Locator`) → file:line jumps to the line
+- [ ] Click a compile error → correct line/column
+- [ ] Modify → `*` in the tab/dropdown; `Ctrl+S` in Neovim (`:w`) → `*` gone
+- [ ] Modify, `:Build` → Qt Creator saves first (file on disk is up to date)
+- [ ] `:e other.cpp`, Telescope/fzf-lua → Qt Creator's current document follows
+- [ ] `:bd` → document disappears from "Open Documents"
+- [ ] Close the document in Qt Creator (modified, "Do not Save") → buffer gone
+- [ ] Completion (nvim-cmp/blink), LSP hover, which-key, noice → visible as in nvim
+- [ ] `:Qtc` without argument → picker; `:Qtc Debugger.<Tab>` completes
+- [ ] `Ctrl+2`/`Alt+4` → Qt Creator mode/output (pass-through)
+- [ ] `.ui` file still opens in Designer
+- [ ] "Open With" → Qt Creator text editor still works
+- [ ] `:qa` → documents close, the next file starts a fresh Neovim
+- [ ] Broken init.lua (`error()` at the top) → message, no restart loop
+- [ ] Quit Qt Creator with a modified file → save dialog, saving writes
+- [ ] Switch mode to "Classic" + restart → old text editors, no more Neovim mappings
 
-## Ergebnis berichten
+## Reporting the result
 
-Welche Stufen gelaufen sind, PASS/FAIL je Prüfung, Pfad der Screenshots, und
-was **nicht** geprüft werden konnte (z. B. kein Qt Creator verfügbar → Stufe 3 offen).
+Which stages ran, PASS/FAIL per check, the screenshot paths, and what could
+**not** be tested (e.g. no Qt Creator available → stage 3 pending).

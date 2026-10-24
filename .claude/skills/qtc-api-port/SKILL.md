@@ -1,68 +1,68 @@
 ---
 name: qtc-api-port
-description: qnvim auf eine neue Qt-Creator-Version portieren oder eine Qt-Creator-API nachschlagen (IEditor, IDocument, IEditorFactory, EditorManager, ActionManager, Aspects, MIME-Datenbank). Verwenden bei Versionssprüngen, Compile-Fehlern durch API-Änderungen oder wenn unklar ist, wie eine Qt-Creator-Schnittstelle sich verhält.
+description: Port qnvim to a new Qt Creator version or look up a Qt Creator API (IEditor, IDocument, IEditorFactory, EditorManager, ActionManager, Aspects, MIME database). Use for version bumps, compile errors caused by API changes, or when it is unclear how a Qt Creator interface behaves.
 ---
 
-# Qt-Creator-API portieren und nachschlagen
+# Porting and looking up the Qt Creator API
 
-## Grundregeln
+## Basic rules
 
-- Nur **öffentliche** API (`coreplugin/...`, `texteditor/...`, `utils/...`,
-  `projectexplorer/...` Header ohne `_p.h`). Private Header nie einbinden –
-  sie sind nicht im qtcreator_dev-Paket. Quellcode lesen ist erlaubt.
-- Qt Creator garantiert API-Kompatibilität nur innerhalb von Major.Minor
-  (`CompatVersion`, z. B. 20.0.0 für alle 20.0.x). Es gibt keine 20.1/20.2 –
-  nach 20.0.x kommt 21.0.
+- **Public** API only (`coreplugin/...`, `texteditor/...`, `utils/...`,
+  `projectexplorer/...` headers without `_p.h`). Never include private headers —
+  they are not in the qtcreator_dev package. Reading the source is allowed.
+- Qt Creator guarantees API compatibility only within a major.minor
+  (`CompatVersion`, e.g. 20.0.0 for all 20.0.x). There is no 20.1/20.2 — 21.0
+  follows 20.0.x.
 
-## Quellen besorgen
+## Getting the sources
 
 ```sh
 git ls-remote --tags https://github.com/qt-creator/qt-creator.git | grep 'v2[0-9]\.'
-git clone --depth 1 --branch v<Version> https://github.com/qt-creator/qt-creator.git
+git clone --depth 1 --branch v<version> https://github.com/qt-creator/qt-creator.git
 ```
 
-Die Branding-Datei `cmake/QtCreatorIDEBranding.cmake` nennt `IDE_VERSION` und
+The branding file `cmake/QtCreatorIDEBranding.cmake` names `IDE_VERSION` and
 `IDE_VERSION_COMPAT`.
 
-## Versionssprung – Checkliste
+## Version bump — checklist
 
-1. `external/qtcreator/version.cmake` → `QT_CREATOR_VERSION` setzen.
-2. Versionsverweise in `README.md`, `AGENTS.md`, `docs/building.md` anpassen.
-3. Compile-Check: `tools/compilecheck/run.sh` (Skill `qnvim-build`).
-4. Jeden Fehler gegen die neuen Header klären:
-   `git -C <qtc> log --oneline v<alt>..v<neu> -- src/plugins/coreplugin/editormanager/ieditor.h`
-   zeigt, was sich an einem Header geändert hat.
-5. Benötigte Qt-Version prüfen (`IDE_QT_VERSION_MIN` in `CMakeLists.txt` von Qt Creator,
-   Qt-Version der Release-Builds aus der Ankündigung).
-6. CHANGELOG „Changed: Target Qt Creator X“.
+1. Set `QT_CREATOR_VERSION` in `external/qtcreator/version.cmake`.
+2. Adjust version references in `README.md`, `AGENTS.md`, `docs/building.md`.
+3. Compile check: `tools/compilecheck/run.sh` (skill `qnvim-build`).
+4. Investigate each error against the new headers:
+   `git -C <qtc> log --oneline v<old>..v<new> -- src/plugins/coreplugin/editormanager/ieditor.h`
+   shows what changed in a header.
+5. Check the required Qt version (`IDE_QT_VERSION_MIN` in Qt Creator's
+   `CMakeLists.txt`; Qt version of the release builds from the announcement).
+6. CHANGELOG "Changed: Target Qt Creator X".
 
-## Wichtige Fakten (Stand 20.0.2), von denen der GUI-Modus abhängt
+## Important facts (as of 20.0.2) that GUI mode depends on
 
-- **Editorauswahl**: `IEditorFactory::preferredEditorFactories()` sucht Factories
-  über die MIME-Hierarchie (spezifischster Typ zuerst, innerhalb einer Ebene in
-  Registrierungsreihenfolge) und stellt die vom Benutzer bevorzugte Factory
-  (`EditorManager/PreferredEditorFactories` in den Settings, Map MIME → Editor-Id)
-  nach vorn. Diese Map liest `ICore::extensionsInitialized()` – also **nach**
-  dem `extensionsInitialized()` aller abhängigen Plugins. Darauf beruht
-  `NvimGuiSession::takeOverTextEditors()`. Bei jedem Versionssprung prüfen:
-  `grep -n preferredEditorFactoriesKey src/plugins/coreplugin/editormanager/editormanager.cpp`
-  und die Reihenfolge in `ICore::extensionsInitialized()`.
-- **Besitz**: Ein `IEditor` löscht sein Widget und (bei 1 Editor/Dokument) sein
-  Dokument selbst (Vorbild: `ImageViewer`). `DocumentModel` löscht Dokumente nur
-  für suspendierte Einträge.
-- **Speichern**: `IDocument::save()` ruft `saveImpl()`; `aboutToSave`/`saved`
-  werden von `save()` gesendet.
-- **Neu laden**: `reloadBehavior()` → `BehaviorSilent`, damit Qt Creator nicht
-  zusätzlich zu Neovim fragt.
-- **Toolbar**: `IEditor::toolBar()` darf `nullptr` liefern (`EditorToolBar` prüft).
+- **Editor selection**: `IEditorFactory::preferredEditorFactories()` searches
+  factories through the MIME hierarchy (most specific type first, within a level
+  in registration order) and moves the user's preferred factory
+  (`EditorManager/PreferredEditorFactories` in the settings, map MIME → editor id)
+  to the front. This map is read by `ICore::extensionsInitialized()` — i.e.
+  **after** `extensionsInitialized()` of all dependent plugins.
+  `NvimGuiSession::takeOverTextEditors()` relies on this. Check on every version
+  bump: `grep -n preferredEditorFactoriesKey src/plugins/coreplugin/editormanager/editormanager.cpp`
+  and the order in `ICore::extensionsInitialized()`.
+- **Ownership**: an `IEditor` deletes its widget and (with 1 editor/document) its
+  document itself (model: `ImageViewer`). `DocumentModel` deletes documents only
+  for suspended entries.
+- **Saving**: `IDocument::save()` calls `saveImpl()`; `aboutToSave`/`saved` are
+  emitted by `save()`.
+- **Reload**: `reloadBehavior()` → `BehaviorSilent` so Qt Creator does not ask in
+  addition to Neovim.
+- **Toolbar**: `IEditor::toolBar()` may return `nullptr` (`EditorToolBar` checks).
 - **Aspects**: `Utils::StringAspect::setDisplayStyle(LineEditDisplay)`,
-  `SelectionAspect` mit `setUseDataAsSavedValue()`, Layout per `Layouting::`.
+  `SelectionAspect` with `setUseDataAsSavedValue()`, layout via `Layouting::`.
 - **MIME**: `Utils::allMimeTypes()`, `MimeType::inherits()`, `matchesName()`;
-  `mimeutils.h` braucht das Include-Verzeichnis `utils/mimetypes2`.
-- **Settings-Keys** sind `Utils::Key` (eigene Klasse, nicht `QString`).
+  `mimeutils.h` needs the include directory `utils/mimetypes2`.
+- **Settings keys** are `Utils::Key` (its own class, not `QString`).
 
-## Antwortformat (für Recherchen)
+## Answer format (for research)
 
-Fundstelle mit Datei:Zeile, die relevante Signatur, und ob die API öffentlich
-(exportiert, nicht `_p.h`) ist. Bei Verhaltensfragen den Codepfad kurz
-nachzeichnen, nicht raten.
+Location with file:line, the relevant signature, and whether the API is public
+(exported, not `_p.h`). For behavior questions, trace the code path briefly;
+don't guess.

@@ -1,75 +1,73 @@
 ---
 name: qtc-editor-integration
-description: Die Qt-Creator-Seite des GUI-Modus ändern – NvimEditor/NvimDocument/NvimEditorHost/NvimEditorFactory, Shell-Widget einbetten und umhängen, MIME-Übernahme, Tastaturdurchreichung, Einstellungen, Menüaktionen. Verwenden bei Änderungen in src/gui/*.cpp|h, src/qnvimplugin.* oder src/qnvimsettings.*.
+description: Change the Qt Creator side of GUI mode — NvimEditor/NvimDocument/NvimEditorHost/NvimEditorFactory, embedding and re-parenting the Shell widget, MIME takeover, keyboard pass-through, settings, menu actions. Use for changes in src/gui/*.cpp|h, src/qnvimplugin.* or src/qnvimsettings.*.
 ---
 
-# GUI-Modus: Qt-Creator-Integration
+# GUI mode: Qt Creator integration
 
-## Klassen (src/gui/)
+## Classes (src/gui/)
 
-| Klasse | Rolle |
+| Class | Role |
 |---|---|
-| `NvimGuiSession` | besitzt Connector, Shell, Factory, Dokumentregister; RPC; Neustart |
-| `NvimEditorFactory` | Id `QNVim.NeovimGuiEditor` (stabil! steht in User-Settings), MIME `text/plain` |
-| `NvimEditor` | 1 Editor pro Dokument (`setDuplicateSupported(false)`), besitzt Dokument und Host |
-| `NvimDocument` | spiegelt Datei, `'modified'`, Cursor; `saveImpl` → `writeBuffer` (synchron) |
-| `NvimEditorHost` | Widget im Editorbereich; hält die Shell oder zeigt einen Schnappschuss |
-| `nvimGuiArguments()` | Startargumente, frei von Qt-Creator-Typen (vom Smoke-Test mitgenutzt) |
+| `NvimGuiSession` | owns connector, Shell, factory, document registry; RPC; restart |
+| `NvimEditorFactory` | id `QNVim.NeovimGuiEditor` (stable! stored in user settings), MIME `text/plain` |
+| `NvimEditor` | one editor per document (`setDuplicateSupported(false)`), owns document and host |
+| `NvimDocument` | mirrors file, `'modified'`, cursor; `saveImpl` → `writeBuffer` (synchronous) |
+| `NvimEditorHost` | widget in the editor area; holds the Shell or shows a snapshot |
+| `nvimGuiArguments()` | startup arguments, free of Qt Creator types (also used by the smoke test) |
 
-## Lebensdauer – die eine Regel
+## Lifetime — the one rule
 
-**Die Shell gehört nie einem Host.** Jeder Host gibt sie in `release()` frei
-(auch im Destruktor), bevor er gelöscht wird; sonst löscht Qt sie als Kind mit.
-`NvimEditor::~NvimEditor` ruft `m_host->release()` vor `delete m_host`.
-Die Shell wird nur in `NvimGuiSession::shutdown()` und `onNeovimExited()`
-gelöscht. Alle Zeiger auf Qt-Objekte über Grenzen hinweg sind `QPointer`.
+**The Shell never belongs to a host.** Every host releases it in `release()`
+(also in the destructor) before it is deleted; otherwise Qt deletes it as a
+child. `NvimEditor::~NvimEditor` calls `m_host->release()` before
+`delete m_host`. The Shell is deleted only in `NvimGuiSession::shutdown()` and
+`onNeovimExited()`. All pointers to Qt objects across boundaries are `QPointer`.
 
-## Shell umhängen
+## Re-parenting the Shell
 
-`onCurrentEditorChanged()` → `attachShellTo(host)`: alter Host `release()`
-(macht Schnappschuss), neuer Host `adopt()` (setzt `focusProxy` → EditorManager
-fokussiert automatisch die Shell). Andere Editortypen ändern nichts.
-Neovim hat **einen** Bildschirm: in einer zweiten Qt-Creator-Split-Ansicht steht
-nur der Schnappschuss.
+`onCurrentEditorChanged()` → `attachShellTo(host)`: old host `release()` (takes a
+snapshot), new host `adopt()` (sets `focusProxy` → EditorManager focuses the
+Shell automatically). Other editor types change nothing. Neovim has **one**
+screen: a second Qt Creator split view shows only the snapshot.
 
-## Neovim als Standardeditor
+## Neovim as the default editor
 
-`takeOverTextEditors()` (in `QNVimPlugin::extensionsInitialized()`, also vor
-Core!) schreibt für jeden MIME-Typ, der `text/plain` erbt und nicht
-ausgeschlossen ist, die Editor-Id in `EditorManager/PreferredEditorFactories`.
-Eigene Benutzerwahl für einen Typ bleibt erhalten. Die übernommenen Typen
-stehen in `QNVim/Gui/TakenOverMimeTypes`; `releaseTextEditors()` (Klassik-Modus)
-entfernt genau diese. Hintergrund: Skill `qtc-api-port`.
+`takeOverTextEditors()` (in `QNVimPlugin::extensionsInitialized()`, i.e. before
+Core!) writes the editor id into `EditorManager/PreferredEditorFactories` for
+every MIME type that inherits `text/plain` and is not excluded. A user's own
+choice for a type is preserved. The taken-over types are in
+`QNVim/Gui/TakenOverMimeTypes`; `releaseTextEditors()` (classic mode) removes
+exactly those. Background: skill `qtc-api-port`.
 
-## Tasten
+## Keys
 
-`eventFilter` auf der Shell akzeptiert jedes `ShortcutOverride` – außer
-Sequenzen aus „Keys for Qt Creator“ (`m_passthrough`). Dadurch kommen
-`Ctrl+S`, `Esc`, `Ctrl+K` … bei Neovim an. Tab/Backtab behandelt
-`Shell::event()` selbst.
+`eventFilter` on the Shell accepts every `ShortcutOverride` — except sequences
+from "Keys for Qt Creator" (`m_passthrough`). This lets `Ctrl+S`, `Esc`,
+`Ctrl+K` … reach Neovim. Tab/Backtab are handled by `Shell::event()` itself.
 
-## Einstellungen hinzufügen
+## Adding settings
 
 1. Aspect in `QNVimSettings` (`src/qnvimsettings.h`), `setSettingsKey("Gui/…")`,
-   Label/Tooltip/Default im Konstruktor, ins Layout (Gruppe „Neovim GUI“).
-2. Wirkung beim Start (`NvimGuiSession` liest `settings()`); Modus- und
-   GUI-Optionen gelten nach Neustart (Hinweis-Label existiert).
-3. Tabelle in `docs/gui-mode.md` ergänzen.
+   label/tooltip/default in the constructor, add it to the layout (group
+   "Neovim GUI").
+2. Effect at startup (`NvimGuiSession` reads `settings()`); mode and GUI options
+   take effect after a restart (a notice label exists).
+3. Add the setting to the table in `docs/gui-mode.md`.
 
-## Menüaktionen
+## Menu actions
 
 In `QNVimPlugin::setupGuiMode()`: `ActionManager::registerAction(action, id,
-Context(C_GLOBAL))`, ins Menü `Constants::MENU_ID` (Tools > QNVim). Ids in
-`gui/nvimguiconstants.h`.
+Context(C_GLOBAL))`, add it to the menu `Constants::MENU_ID` (Tools > QNVim).
+Ids are in `gui/nvimguiconstants.h`.
 
-## Typische Fehler
+## Typical mistakes
 
-- `EditorManager::openEditor` innerhalb einer Notification ohne
-  `m_syncingFromNvim` → Ping-Pong.
-- Lua-Aufruf vor dem UI-Attach → geht verloren, wenn nicht über `luaCall()`
-  (Warteschlange) geschickt.
-- Synchrones Warten (`writeBuffer`) nur mit `QEventLoop::ExcludeUserInputEvents`
-  und Timeout – Neovim kann in einem Prompt hängen.
-- Dokumentschlüssel: immer `key(path)` (kanonisch), nie roher String.
-- Nach jeder Änderung: Skill `qnvim-build` (Compile-Check) und
+- `EditorManager::openEditor` inside a notification without
+  `m_syncingFromNvim` → ping-pong.
+- Lua call before UI attach → lost unless sent through `luaCall()` (queue).
+- Synchronous waiting (`writeBuffer`) only with `QEventLoop::ExcludeUserInputEvents`
+  and a timeout — Neovim can be stuck in a prompt.
+- Document keys: always `key(path)` (canonical), never a raw string.
+- After every change: skill `qnvim-build` (compile check) and
   `qnvim-gui-testing`.
