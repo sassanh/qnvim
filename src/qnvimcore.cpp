@@ -79,6 +79,23 @@ Core::IEditor *editorForView(QWidget *view) {
     return nullptr;
 }
 
+// qnvim's Lua API (src/qnvim.lua) as a Neovim command. Neovim runs --cmd
+// before the user's init.vim/init.lua, so require('qnvim') works from the
+// user's configuration too, not only after qnvim has attached. `:lua` takes
+// the rest of the command as one Lua chunk, which lets the module be passed
+// as-is as the body of the function that fills package.preload.
+QString luaApiCommand() {
+    QFile module(QStringLiteral(":/qnvim/qnvim.lua"));
+    if (!module.open(QFile::ReadOnly | QFile::Text)) {
+        qWarning(Main) << "Could not read the Lua API:" << module.errorString();
+        return QString();
+    }
+
+    return QStringLiteral("lua package.preload['qnvim'] = function()\n")
+           + QString::fromUtf8(module.readAll())
+           + QStringLiteral("\nend");
+}
+
 // Open a file in Qt Creator's text editor for its type. Resource editors and
 // other non-text editors (the .ui form editor, image viewers, ...) are skipped:
 // qnvim can only show buffers in text editors. The plain text editor is the
@@ -126,6 +143,9 @@ QNVimCore::QNVimCore(QObject *parent)
     qunsetenv("NVIM");
     qunsetenv("NVIM_LISTEN_ADDRESS");
     QStringList nvimArgs{"--cmd", "let g:QNVIM=1"};
+    const QString luaApi = luaApiCommand();
+    if (!luaApi.isEmpty())
+        nvimArgs << "--cmd" << luaApi;
     // Dev hook: QNVIM_LISTEN=<path> also makes the spawned Neovim listen on that
     // socket, so its own view can be inspected while qnvim runs, e.g.
     //   nvim --server <path> --remote-expr 'line(".")'
@@ -1317,7 +1337,8 @@ void QNVimCore::syncSelectionToVim(Core::IEditor *editor) {
         mNVim->api2()->nvim_win_set_cursor(win, QPoint(col - 1, line));
 }
 
-void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVariantList &vPos, QByteArray mode) {
+void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVariantList &vPos,
+                                 QByteArray mode, int cursorVirtCol, int anchorVirtCol) {
     const auto winState = mWindows.find(win);
     if (winState == mWindows.end())
         return;
@@ -1402,7 +1423,12 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
             textEditor->textCursor().position() != cursor.position())
             textEditor->setTextCursor(cursor);
     } else if (mMode == "\x16") { // VISUAL BLOCK
-        if (vCol > col)
+        // The visual ends are inclusive: extend the end the cursor is on.
+        // getpos() reports byte columns, which do not compare across lines
+        // that have different multi-byte characters before the selection, so
+        // use Neovim's screen columns (visual columns) to tell the sides
+        // apart.
+        if (anchorVirtCol > cursorVirtCol)
             anchor = nextPosition(anchor);
         else
             position = nextPosition(position);
@@ -1541,10 +1567,10 @@ void QNVimCore::syncFromVim() {
     unsigned long long syncCounter = ++mSyncCounter;
 
     auto request = mNVim->api2()->nvim_eval(
-        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0'), get(get(getwininfo(win_getid()), 0, {}), 'textoff', -1)]");
+        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0'), get(get(getwininfo(win_getid()), 0, {}), 'textoff', -1), virtcol('.'), virtcol('v')]");
     connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
-        if (state.size() < 12)
+        if (state.size() < 14)
             return;
 
         if (mSyncCounter != syncCounter)
@@ -1565,6 +1591,8 @@ void QNVimCore::syncFromVim() {
         QVariantList pos = state[5].toList().mid(1, 2);
         QVariantList vPos = state[6].toList().mid(1, 2);
         int topline = state[10].toList().value(1).toInt();
+        int cursorVirtCol = state[12].toInt();
+        int anchorVirtCol = state[13].toInt();
 
         mNumber = state[7].toBool();
         mRelativeNumber = state[8].toBool();
@@ -1610,7 +1638,7 @@ void QNVimCore::syncFromVim() {
         }
 
         if (mChangedTicks.value(bufferNumber, 0) == changedtick and mTextBuffer == bufferNumber) {
-            syncCursorFromVim(win, pos, vPos, mode);
+            syncCursorFromVim(win, pos, vPos, mode, cursorVirtCol, anchorVirtCol);
             return;
         }
 
@@ -1702,7 +1730,7 @@ void QNVimCore::syncFromVim() {
             if (textEditor->document()->isModified() != modified)
                 textEditor->document()->setModified(modified);
 
-            syncCursorFromVim(win, pos, vPos, mode);
+            syncCursorFromVim(win, pos, vPos, mode, cursorVirtCol, anchorVirtCol);
         });
     });
 }

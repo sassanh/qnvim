@@ -59,7 +59,8 @@ class QNVimCore : public QObject {
     void syncSelectionToVim(Core::IEditor * = nullptr);
     void syncModifiedToVim(Core::IEditor * = nullptr);
     void syncToVim(Core::IEditor * = nullptr, std::function<void()> = nullptr);
-    void syncCursorFromVim(int win, const QVariantList &, const QVariantList &, QByteArray mode);
+    void syncCursorFromVim(int win, const QVariantList &, const QVariantList &,
+                          QByteArray mode, int cursorVirtCol, int anchorVirtCol);
     void syncFromVim();
 
     void triggerCommand(const QByteArray &);

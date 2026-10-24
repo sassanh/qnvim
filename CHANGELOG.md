@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- The Neovim side API is available from Lua as the `qnvim` module: `require('qnvim').trigger_command()` triggers Qt Creator commands by id, and functions such as `qnvim.build()`, `qnvim.run()` and `qnvim.debug_continue()` mirror the Ex commands. qnvim installs the module before Neovim loads the user's configuration, so it can be used from `init.lua`, `qnvim.vim` and plugins ([#55](https://github.com/sassanh/qnvim/issues/55)).
+
+- A Lua qnvim configuration file is supported: with `init.lua`, qnvim sources `qnvim.lua` when it exists (falling back to `qnvim.vim`), and with `init.vim` it sources `qnvim.vim` (falling back to `qnvim.lua`). `examples/qnvim.lua` is the example configuration in Lua, and `examples/qnvim.vim` remains the Vimscript one.
+
 - The command line, messages and completion menu can be rendered by Neovim plugins such as noice.nvim: **Preferences > QNVim > Command line, messages and completion menu** selects between **Rendered by QNVim** (the default) and **Rendered by Neovim plugins**. The setting is applied when qnvim starts; in plugin mode qnvim no longer claims `ext_messages`, `ext_cmdline`, `ext_popupmenu` or `ext_wildmenu`, so plugins that defer to the host UI can take over.
 
 - `./quick-run.sh` runs the development loop in one command: it configures and builds the plugin, installs it into the Qt Creator downloaded under `external/qtcreator/` (retargeting it to the bundled Qt on macOS), stops a running instance and starts it with qnvim's logging enabled.

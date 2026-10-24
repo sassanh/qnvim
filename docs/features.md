@@ -97,6 +97,7 @@ shortcut is <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pressed twice.
 ## IDE commands
 
 qnvim defines `:Build`, `:Rebuild`, `:Clean`, `:Deploy`, `:Run`, `:Debug`,
-`:QMake`, `:Target` and related commands. Any registered Qt Creator command can
-also be triggered by id through the RPC channel. See
+`:QMake`, `:Target` and related commands, and a Lua API with the same actions
+through `require('qnvim')`. Any registered Qt Creator command can also be
+triggered by id through the RPC channel. See
 [Configuration](configuration.md#triggering-qt-creator-commands).

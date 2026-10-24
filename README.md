@@ -53,12 +53,13 @@ To build from source, see [Building and installing](docs/building.md).
 
 ## Configuration
 
-Add a `qnvim.vim` next to your `init.vim`/`init.lua`; qnvim exposes its path as
-`$MYQVIMRC` and sources it at startup. From it you can trigger Qt Creator
-commands through `g:neovim_channel`.
+Add a `qnvim.vim` or `qnvim.lua` next to your `init.vim`/`init.lua`; qnvim
+exposes its path as `$MYQVIMRC` and sources it at startup. From it you can
+trigger Qt Creator commands through `g:neovim_channel` or the `qnvim` Lua
+module.
 
-See [Configuration](docs/configuration.md) and
-[`examples/qnvim.vim`](examples/qnvim.vim).
+See [Configuration](docs/configuration.md) and the example configurations
+([Vimscript](examples/qnvim.vim), [Lua](examples/qnvim.lua)).
 
 ## Documentation
 

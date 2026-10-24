@@ -61,6 +61,10 @@ QT_LOGGING_RULES='qtcreator.plugin.qnvim.*=true' \
 - The VimL preamble is sent as one multi-line `nvim_command`. A plain
   `autocmd ...` line absorbs the lines that follow it, so wrap every autocmd
   in `execute "autocmd ..."`; `function! ... endfunction` is fine.
+- The Lua API (`src/qnvim.lua`) reaches Neovim as a `--cmd` that starts with
+  `lua package.preload...`. `:lua` takes the rest of the command string,
+  newlines included, as its chunk, so the module must stay the last thing in
+  that command.
 - Never assume a new Neovim window is right of/below its source:
   `'splitright'`/`'splitbelow'` and `:leftabove`/`:rightbelow` can put it on
   either side. Read the actual layout.

@@ -42,7 +42,7 @@ nnoremap <silent> <d-8> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand
 nnoremap <silent> <c-1> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Welcome')<cr>
 nnoremap <silent> <c-2> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Edit')<cr>
 nnoremap <silent> <c-3> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Design')<cr>
-nnoremap <silent> <c-4> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Mode.Debug')<cr>
+nnoremap <silent> <c-4> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Debug')<cr>
 nnoremap <silent> <c-5> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Project')<cr>
 nnoremap <silent> <c-6> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Help')<cr>
 nnoremap <silent> <c-7> :call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'QtCreator.Mode.Welcome')<cr>

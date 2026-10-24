@@ -13,18 +13,20 @@ The choice is made when Neovim is attached, so restart qnvim after changing it
 
 In plugin mode qnvim does not claim Neovim's message, command-line or
 completion-menu widgets. A plugin must handle them; without one, they are not
-shown. This option cannot be set from `qnvim.vim`: that file is sourced after
-the UI is attached.
+shown. This option cannot be set from `qnvim.vim` or `qnvim.lua`: those files
+are sourced after the UI is attached.
 
-## `qnvim.vim`
+## `qnvim.vim` and `qnvim.lua`
 
-Put a `qnvim.vim` file in the same directory as your `init.vim`/`init.lua`.
-qnvim sets `$MYQVIMRC` to that path (mind the `Q` after `MY`) and sources it at
-startup.
+Put a `qnvim.vim` (or `qnvim.lua`) file in the same directory as your
+`init.vim`/`init.lua`. qnvim sets `$MYQVIMRC` to that path (mind the `Q` after
+`MY`) and sources it at startup. With `init.lua` it uses `qnvim.lua` when it
+exists and falls back to `qnvim.vim`; with `init.vim` it uses `qnvim.vim` and
+falls back to `qnvim.lua`.
 
-The [example configuration](../examples/qnvim.vim) contains ready-made mappings
-for building, deploying, running, switching panes and triggering Qt Creator
-commands.
+The example configurations ([Vimscript](../examples/qnvim.vim),
+[Lua](../examples/qnvim.lua)) contain ready-made mappings for building,
+deploying, running, switching panes and triggering Qt Creator commands.
 
 ## Triggering Qt Creator commands
 
@@ -78,3 +80,44 @@ qnvim defines these commands in Neovim:
 | `:Target` | Select the target |
 
 Commands can be combined with `|`, for example `:Build|Run`.
+
+## Lua API
+
+The same actions are available in Neovim's Lua through the `qnvim` module.
+qnvim installs it before Neovim loads your configuration, so it can be required
+from `init.lua`, `qnvim.vim`, `qnvim.lua` and plugins:
+
+```lua
+local qnvim = require('qnvim')
+
+vim.keymap.set('n', '<leader>b', qnvim.build)
+vim.keymap.set('n', '<leader>r', qnvim.run)
+vim.keymap.set('n', '<leader>o', function()
+  qnvim.trigger_command('QtCreator.Options')
+end)
+```
+
+`qnvim.trigger_command(...)` triggers one or more Qt Creator command ids, in
+order, like the `triggerCommand` notification above. The named functions are
+shortcuts for the Ex commands:
+
+| Function | Ex command |
+| --- | --- |
+| `qnvim.build()` | `:Build`, `:BuildProject` |
+| `qnvim.build_all()` | `:BuildAll` (builds the session) |
+| `qnvim.rebuild()` | `:Rebuild`, `:RebuildProject` |
+| `qnvim.rebuild_all()` | `:RebuildAll` (rebuilds the session) |
+| `qnvim.clean()` | `:Clean`, `:CleanProject` |
+| `qnvim.clean_all()` | `:CleanAll` (cleans the session) |
+| `qnvim.deploy()` | `:Deploy`, `:DeployProject` |
+| `qnvim.deploy_all()` | `:DeployAll` (deploys the session) |
+| `qnvim.run()` | `:Run` |
+| `qnvim.debug()` | `:Debug`, `:DebugStart` |
+| `qnvim.debug_continue()` | `:DebugContinue` |
+| `qnvim.qmake()` | `:QMake` |
+| `qnvim.target()` | `:Target` |
+
+The functions send notifications to Qt Creator and need qnvim's RPC channel.
+Neovim loads `init.lua` before qnvim attaches, so requiring the module there is
+fine, but calling these functions at its top level raises an error. Key
+mappings, `VimEnter` autocommands, `qnvim.vim` and `qnvim.lua` run late enough.

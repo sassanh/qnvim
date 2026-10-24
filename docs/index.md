@@ -2,8 +2,8 @@
 
 - [Features](features.md) — what qnvim does and how Neovim and Qt Creator behave
   together.
-- [Configuration](configuration.md) — `qnvim.vim`, the RPC channel, and Ex
-  commands.
+- [Configuration](configuration.md) — `qnvim.vim`/`qnvim.lua`, the RPC channel,
+  the Lua API and Ex commands.
 - [Building and installing](building.md) — releases, source builds, development
   builds, and platform notes.
 - [Troubleshooting](troubleshooting.md) — plugin loading, Neovim startup, logs,

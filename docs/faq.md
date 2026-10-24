@@ -32,7 +32,14 @@ Neovim's colorscheme and highlight groups are not used in editors; floating
 windows use Neovim's colors and attributes. See
 [Limitations](limitations.md#syntax-highlighting).
 
-## Can I trigger Qt Creator actions from Vimscript?
+## Can I trigger Qt Creator actions from Vimscript or Lua?
 
-Yes. Use `g:neovim_channel` and the `Gui` `triggerCommand` notification. See
-[Configuration](configuration.md#triggering-qt-creator-commands).
+Yes. From Vimscript, use `g:neovim_channel` and the `Gui` `triggerCommand`
+notification. From Lua, use the `qnvim` module:
+
+```lua
+require('qnvim').run()
+```
+
+See [Configuration](configuration.md#triggering-qt-creator-commands) and
+[the Lua API](configuration.md#lua-api).

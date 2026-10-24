@@ -55,4 +55,26 @@ function! QNVimWindowInfo()
     endfor
     return l:windows
 endfunction
-autocmd VimEnter * let $MYQVIMRC=substitute(substitute($MYVIMRC, 'init.vim$', 'qnvim.vim', 'g'), 'init.lua$', 'qnvim.vim', 'g') | source $MYQVIMRC
+" Source the user's qnvim.vim/qnvim.lua: the file matching their Neovim
+" configuration (init.lua -> qnvim.lua), falling back to the other extension.
+function! QNVimSourceRc()
+    if empty($MYVIMRC)
+        return
+    endif
+    let l:dir = fnamemodify($MYVIMRC, ':p:h')
+    if $MYVIMRC =~# 'init\.lua$'
+        let l:rc = l:dir . '/qnvim.lua'
+        let l:fallback = l:dir . '/qnvim.vim'
+    else
+        let l:rc = l:dir . '/qnvim.vim'
+        let l:fallback = l:dir . '/qnvim.lua'
+    endif
+    if !filereadable(l:rc) && filereadable(l:fallback)
+        let l:rc = l:fallback
+    endif
+    let $MYQVIMRC = l:rc
+    if filereadable(l:rc)
+        execute 'source' fnameescape(l:rc)
+    endif
+endfunction
+execute "autocmd VimEnter * call QNVimSourceRc()"
