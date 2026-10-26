@@ -5,12 +5,14 @@
 #include "textediteventfilter.h"
 
 #include <QDebug>
+#include <QEvent>
 #include <QFuture>
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 
 #include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/icore.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/texteditorsettings.h>
 
@@ -175,7 +177,13 @@ void CmdLine::editorOpened(Core::IEditor &editor) {
         it != m_uniqueWidgets.end() && it->second && it->second->isValid())
         widgetToAdd = it->second; // We already have a widget for that editor view
     else {
-        widgetToAdd = new CmdLineWidget(m_core, editorView);
+        // The command line is an overlay in the main window, so that it is
+        // drawn above Qt Creator's status bar. A placeholder in the editor
+        // view keeps the space it takes from the text area.
+        QWidget *overlayParent = Core::ICore::mainWindow();
+        if (!overlayParent)
+            overlayParent = editorView->window();
+        widgetToAdd = new CmdLineWidget(m_core, editorView, overlayParent);
         if (!widgetToAdd->isValid()) {
             // The editor view is not ready to embed the widget yet (its layout
             // is missing). Try again the next time a CmdLine widget is needed.
@@ -220,11 +228,26 @@ CmdLineWidget *CmdLine::ensureCurrentWidget() {
     return currentWidget();
 }
 
-CmdLineWidget::CmdLineWidget(QNVimCore *core, QWidget *parent) : QWidget(parent) {
-    auto parentLayout = parent ? parent->layout() : nullptr;
-    if (!parentLayout)
+CmdLineWidget::CmdLineWidget(QNVimCore *core, QWidget *editorView, QWidget *overlayParent)
+    : QWidget(overlayParent), m_editorView(editorView) {
+    auto parentLayout = editorView ? editorView->layout() : nullptr;
+    if (!parentLayout || !overlayParent)
         return;
-    parentLayout->addWidget(this);
+
+    // The visible widget is an overlay in the main window: a child of the
+    // editor view would be drawn below the status bar when Qt Creator draws
+    // the status bar over the bottom of the editor area. The placeholder is
+    // invisible but keeps the command line's space in the view's layout.
+    m_placeholder = new QWidget(editorView);
+    m_placeholder->setObjectName(QStringLiteral("cmdline-placeholder"));
+    m_placeholder->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    m_placeholder->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_placeholder->installEventFilter(this);
+    parentLayout->addWidget(m_placeholder);
+    m_placeholder->hide();
+
+    editorView->installEventFilter(this);
+    connect(editorView, &QObject::destroyed, this, &QObject::deleteLater);
 
     auto pLayout = new QHBoxLayout(this);
     pLayout->setContentsMargins(0, 0, 0, 0);
@@ -256,6 +279,51 @@ CmdLineWidget::CmdLineWidget(QNVimCore *core, QWidget *parent) : QWidget(parent)
     hide();
 
     pLayout->addWidget(m_pTextWidget);
+}
+
+CmdLineWidget::~CmdLineWidget() {
+    // The placeholder is a child of the editor view, not of this overlay.
+    if (m_placeholder)
+        delete m_placeholder;
+}
+
+void CmdLineWidget::showEvent(QShowEvent *event) {
+    QWidget::showEvent(event);
+
+    if (m_placeholder) {
+        m_placeholder->show();
+        updateOverlayGeometry();
+    }
+
+    // The overlay is a child of the main window, but the status bar was added
+    // after it: raise it so that it is drawn above everything.
+    raise();
+}
+
+void CmdLineWidget::hideEvent(QHideEvent *event) {
+    QWidget::hideEvent(event);
+
+    if (m_placeholder)
+        m_placeholder->hide();
+}
+
+bool CmdLineWidget::eventFilter(QObject *watched, QEvent *event) {
+    if ((watched == m_placeholder || watched == m_editorView)
+        && (event->type() == QEvent::Move || event->type() == QEvent::Resize
+            || event->type() == QEvent::Show || event->type() == QEvent::Hide
+            || event->type() == QEvent::ParentChange)) {
+        updateOverlayGeometry();
+    }
+
+    return QWidget::eventFilter(watched, event);
+}
+
+void CmdLineWidget::updateOverlayGeometry() {
+    if (!m_placeholder || !m_placeholder->isVisible() || !isVisible() || !parentWidget())
+        return;
+
+    const QPoint topLeft = m_placeholder->mapTo(parentWidget(), QPoint(0, 0));
+    setGeometry(QRect(topLeft, m_placeholder->size()));
 }
 
 void CmdLineWidget::setText(const QString &text) {
@@ -292,10 +360,15 @@ bool CmdLineWidget::isReadOnly() const {
 
 void CmdLineWidget::adjustSize(const QSizeF &newTextDocumentSize) {
     auto fontHeight = m_pTextWidget->fontMetrics().height();
-    auto newHeight = newTextDocumentSize.height() * fontHeight + m_pTextWidget->frameWidth() * 2;
+    auto newHeight = qCeil(newTextDocumentSize.height() * fontHeight)
+                     + m_pTextWidget->frameWidth() * 2;
 
     m_pTextWidget->setMaximumHeight(newHeight);
-    m_pTextWidget->parentWidget()->setMaximumHeight(newHeight);
+    setFixedHeight(newHeight);
+    if (m_placeholder)
+        m_placeholder->setFixedHeight(newHeight);
+
+    updateOverlayGeometry();
 }
 
 bool ParentChangedFilter::eventFilter(QObject *watched, QEvent *event) {

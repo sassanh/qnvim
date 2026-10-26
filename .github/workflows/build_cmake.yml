@@ -101,6 +101,17 @@ jobs:
     needs: build
 
     steps:
+    - name: Verify tag signature
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        tag_sha=$(gh api "repos/${{ github.repository }}/git/ref/tags/${{ github.ref_name }}" --jq '.object.sha')
+        verified=$(gh api "repos/${{ github.repository }}/git/tags/$tag_sha" --jq '.verification.verified')
+        if [ "$verified" != "true" ]; then
+          echo "::error::Tag ${{ github.ref_name }} is not signed or its signature is not verified by GitHub."
+          exit 1
+        fi
+
     - name: Create Release
       id: create_release
       run: |

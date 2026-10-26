@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QEvent>
 #include <QPointer>
 
 #include <map>
@@ -22,10 +23,11 @@ class QNVimCore;
 class CmdLineWidget : public QWidget {
     Q_OBJECT
   public:
-    explicit CmdLineWidget(QNVimCore *core, QWidget *parent = nullptr);
+    explicit CmdLineWidget(QNVimCore *core, QWidget *editorView, QWidget *overlayParent);
+    ~CmdLineWidget() override;
 
     // False if the widget failed to embed itself into the editor view
-    bool isValid() const { return m_pTextWidget != nullptr; }
+    bool isValid() const { return m_pTextWidget && m_placeholder; }
 
     void setText(const QString &text);
     QString text() const;
@@ -39,10 +41,21 @@ class CmdLineWidget : public QWidget {
     void setReadOnly(bool value);
     bool isReadOnly() const;
 
+  protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
   private:
     void adjustSize(const QSizeF &newSize);
+    // The visible widget lives in Qt Creator's main window so that it is drawn
+    // above the status bar; the placeholder reserves its space in the editor
+    // view's layout.
+    void updateOverlayGeometry();
 
     QPlainTextEdit *m_pTextWidget = nullptr;
+    QPointer<QWidget> m_placeholder;
+    QPointer<QWidget> m_editorView;
 };
 
 class CmdLine : public QObject {

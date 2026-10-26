@@ -16,6 +16,13 @@ completion-menu widgets. A plugin must handle them; without one, they are not
 shown. This option cannot be set from `qnvim.vim` or `qnvim.lua`: those files
 are sourced after the UI is attached.
 
+## Floating windows
+
+qnvim places a floating window where Neovim anchors it: a float anchored to a
+window (including one anchored to the cursor in that window) is shown in the
+editor view that displays the window, and a float anchored to Neovim's screen
+is shown at its screen cell in Qt Creator's main window.
+
 ## `qnvim.vim` and `qnvim.lua`
 
 Put a `qnvim.vim` (or `qnvim.lua`) file in the same directory as your

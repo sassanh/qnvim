@@ -162,38 +162,18 @@ class QNVimCore : public QObject {
     // turned out to be.
     struct FloatState {
         bool isFloat = false;
-        int win = 0;
         // The grid the float is anchored to (win_float_pos' anchor_grid): the
-        // screen (grid 1, the whole main window), a window's grid, or another
-        // float's grid. The float is placed relative to the cell (0, 0) of that
-        // grid, which is not the same as the top left of Neovim's screen for a
-        // window's grid: the window is shown in an editor view somewhere.
+        // screen (grid 1) or a window's grid. A float anchored to a window is
+        // mapped through the editor view of that window (see placeFloats()).
         int anchorGrid = 1;
-        // The window's grid a screen-anchored float is placed relative to
-        // instead of the screen (0: none, see placeFloats()): plugins that put
-        // a popup at the cursor compute the cursor's screen cell (screenpos(),
-        // screenline(), ...) and open an editor-anchored float there, which
-        // belongs to the editor view the cursor is in. Decided when the float's
-        // position is (re)configured and kept afterwards: moving the cursor
-        // does not move a float that was placed at it.
-        int cursorGrid = 0;
-        int classifiedRow = -1;
-        int classifiedCol = -1;
-        // Whether the float sits in the cmdline area of Neovim's screen: a
-        // plugin that completes a `:` command puts its menu right above the
-        // cmdline, which is the row below the window's text. qnvim's editor
-        // view has its cmdline widget there, so such a float is kept above it
-        // (see placeFloats()).
-        bool atCmdline = false;
         // Top left corner of the float on Neovim's screen, in cells. The screen
-        // is grid 1, which qnvim sizes to the whole main window.
+        // is grid 1, which qnvim sizes to the whole main window, so these are
+        // cells of the main window.
         int row = 0;
         int col = 0;
         // Neovim's rendering order of the floats: a float with a higher
         // compindex is drawn over one with a lower one.
         int compindex = 0;
-        // Whether the float can receive mouse events.
-        bool mouse = false;
         // Whether Neovim shows the float: win_float_pos shows it, win_hide
         // hides it without destroying it.
         bool visible = false;
@@ -280,9 +260,10 @@ class QNVimCore : public QObject {
     bool isWindowGrid(int grid) const;
     // The widget of a float, created when its grid is resized.
     FloatWidget *floatWidget(int grid);
-    // Redraw the overlays: show the visible floats with a size, place them
-    // where Neovim has them on the screen (which is the text area of the
-    // current editor) and stack them in Neovim's order.
+    // Redraw the overlays: show the visible floats with a size. A float Neovim
+    // anchors to a window (anchor_grid) is placed in that window's editor view;
+    // every other float is placed at the screen cell Neovim reports (which is a
+    // cell of the whole main window). They are stacked in Neovim's order.
     void placeFloats();
     void setFloatGridSize(int grid, int rows, int cols);
     void setFloatGridLine(int grid, int row, int col, const QVariantList &cells);
@@ -379,10 +360,8 @@ class QNVimCore : public QObject {
     int mWidth = 80;
     QColor mForegroundColor = Qt::black;
     QColor mBackgroundColor = Qt::white;
-    QColor mSpecialColor;
     QColor mCursorColor = Qt::white;
     bool mBusy = false;
-    bool mMouse = false;
     bool mNumber = true;
     bool mRelativeNumber = true;
     bool mWrap = false;

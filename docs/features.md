@@ -45,14 +45,19 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
   dashboard and other floating windows are shown as overlays.
 - Each overlay uses the text, colors, attributes and stacking order Neovim
   reports for the float.
-- A float anchored to Neovim's screen is placed in Qt Creator's main window. A
-  float anchored to a window, or opened at the cursor or the command line, is
-  placed in the editor view that window is shown in.
+- A float anchored to Neovim's screen is placed at its screen cell in Qt
+  Creator's main window (pickers, the dashboard, notifications, which-key,
+  ...).
+- A float Neovim anchors to a window or to the cursor in a window is placed in
+  the editor view that shows that window, so a completion menu or hover popup
+  stays next to the text it belongs to even though Qt Creator's editor layout
+  differs from Neovim's window layout.
 
 ## Command line and messages
 
-- Neovim's command line and message area are rendered in the editor view, like
-  Neovim's own command line, instead of in Qt Creator's status bar.
+- Neovim's command line and message area are rendered at the bottom of the
+  editor view, like Neovim's own command line, and drawn above Qt Creator's
+  status bar instead of behind it.
 - Long commands and multiline messages are shown in full and can be scrolled.
 - Messages are cleared and hidden when Neovim clears them; the command line is
   hidden when Neovim hides it.

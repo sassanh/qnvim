@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file. This projec
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.3...HEAD)
 
+**Fixed**
+
+- Floating windows are placed by the anchor Neovim reports (`win_float_pos`' `anchor_grid`): a float anchored to a window (including one anchored to the cursor in that window) is shown in that window's editor view, at the position it has relative to the window. Floats anchored to the screen stay at their screen cell in the main window (pickers, dashboard, notifications) ([#66](https://github.com/sassanh/qnvim/issues/66)).
+
+- The command line is drawn above Qt Creator's status bar instead of behind it: the visible widget is an overlay in the main window, while an invisible placeholder keeps its space in the editor view's layout ([#66](https://github.com/sassanh/qnvim/issues/66)).
+
 ## [20.0.3](https://github.com/sassanh/qnvim/tree/v20.0.3) (2026-10-24)
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.2...v20.0.3)

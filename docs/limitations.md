@@ -22,6 +22,13 @@ Floating windows are display-only: the cursor is not drawn inside a float and
 mouse events are not forwarded to it. Keys and clicks pass through to the editor
 below, so use the keyboard with pickers and completion menus.
 
+A float Neovim anchors to a window or to the cursor in a window is placed in
+that window's editor view. A float anchored to Neovim's screen is placed at its
+screen cell, and qnvim's screen is the whole main window. A plugin that takes
+an editor-relative position instead of anchoring its float to a window gives
+qnvim no way to know which view it belongs to, so the float stays at its screen
+cell.
+
 ## Command line and messages handed to plugins
 
 When the command line, messages and completion menu are set to be rendered by

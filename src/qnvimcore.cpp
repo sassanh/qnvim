@@ -43,10 +43,11 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QPlainTextEdit>
-#include <QRegularExpression>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStandardPaths>
+#include <QStatusBar>
+#include <QStringList>
 #include <QStyleHints>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -2371,10 +2372,8 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
             if (grid and win) {
                 FloatState &st = mFloats[grid];
                 st.isFloat = true;
-                st.win = win;
-                st.anchorGrid = args[3].toInt();
                 st.visible = true;
-                st.mouse = args[6].toBool();
+                st.anchorGrid = args[3].toInt();
                 st.compindex = args[8].toInt();
                 st.row = args[9].toInt();
                 st.col = args[10].toInt();
@@ -2472,10 +2471,6 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
         mBusy = true;
     } else if (command == "busy_stop") {
         mBusy = false;
-    } else if (command == "mouse_on") {
-        mMouse = true;
-    } else if (command == "mouse_off") {
-        mMouse = false;
     } else if (command == "default_colors_set") {
         auto editor = Core::EditorManager::currentEditor();
         auto textEditor = editor ? qobject_cast<TextEditor::TextEditorWidget *>(editor->widget())
@@ -2499,11 +2494,6 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
                 palette.setBrush(QPalette::Window, mBackgroundColor);
                 textEditor->setPalette(palette);
             }
-        }
-
-        val = args[2].toLongLong();
-        if (val != -1) {
-            mSpecialColor = QRgb(val);
         }
     } else if (command == "cmdline_show") {
         auto content = QByteArray();
@@ -2710,15 +2700,24 @@ static QPoint editorTextOrigin(const TextEditor::TextEditorWidget *textEditor) {
                              textEditor->cursorRect(firstVisibleCursor).y());
 }
 
+// Neovim reports every float's position in cells of its screen (win_float_pos'
+// screen_row/screen_col) and the grid it is anchored to (anchor_grid). qnvim
+// sizes the screen (grid 1) to the whole main window, so a float anchored to
+// the screen is shown at that cell of the main window. A float anchored to a
+// window is placed through the editor view of that window instead: the
+// window's cell on Neovim's screen is not where Qt Creator shows its text,
+// since the views can be anywhere in the main window.
 void QNVimCore::placeFloats() {
     if (mFloats.isEmpty())
         return;
 
     auto mainWindow = Core::ICore::mainWindow();
-    auto editor = Core::EditorManager::currentEditor();
-    auto textEditor = editor ? qobject_cast<TextEditor::TextEditorWidget *>(editor->widget())
-                             : nullptr;
-    if (!mainWindow or !textEditor) {
+    auto currentEditor = Core::EditorManager::currentEditor();
+    auto currentTextEditor = currentEditor
+                                 ? qobject_cast<TextEditor::TextEditorWidget *>(
+                                       currentEditor->widget())
+                                 : nullptr;
+    if (!mainWindow or !currentTextEditor) {
         for (auto &floatState : mFloats) {
             if (floatState.widget)
                 floatState.widget->hide();
@@ -2726,100 +2725,20 @@ void QNVimCore::placeFloats() {
         return;
     }
 
-    const QFont font = textEditor->textDocument()->fontSettings().font();
+    const QFont font = currentTextEditor->textDocument()->fontSettings().font();
     const QFontMetricsF metrics(font);
     const qreal cellWidth = metrics.horizontalAdvance(QLatin1Char('A'));
     const qreal cellHeight = metrics.lineSpacing();
     if (cellWidth <= 0 or cellHeight <= 0)
         return;
 
-    const QPoint windowOrigin = mainWindow->mapToGlobal(QPoint(0, 0));
+    const QPoint mainWindowOrigin = mainWindow->mapToGlobal(QPoint(0, 0));
 
-    // The bottom of the current editor's text area: the editor view puts its
-    // cmdline widget right below the text, which is where Neovim's screen has
-    // the cmdline (right below the window).
-    const QPoint editorTextBottom
-        = textEditor->viewport()->mapToGlobal(QPoint(0, textEditor->viewport()->height()));
-    const qreal textBottom = editorTextBottom.y() - windowOrigin.y();
-
-    // The cursor's row on Neovim's screen, the row the current window's text
-    // ends at, and the grid of the window itself: a screen-anchored float that
-    // sits right at one of those rows was placed at a cell of the editor's
-    // layout (see below).
-    int cursorRow = 0;
-    int textEndRow = 0;
-    int cursorGrid = 0;
-    if (const auto current = mWindows.constFind(mCurrentWindow);
-        current != mWindows.constEnd() and current.value().editor) {
-        auto *cursorEditor = qobject_cast<TextEditor::TextEditorWidget *>(
-            current.value().editor->widget());
-        if (cursorEditor) {
-            const QTextCursor firstVisible = cursorEditor->cursorForPosition(QPoint(0, 0));
-            const int textRow = qRound(
-                (cursorEditor->cursorRect().top() - cursorEditor->cursorRect(firstVisible).top())
-                / cellHeight);
-            cursorRow = current.value().startRow + current.value().winbar + textRow;
-            textEndRow = current.value().startRow + current.value().gridHeight;
-            cursorGrid = current.value().grid;
-        }
-    }
-
-    // Where a float is placed: relative to the cell (0, 0) of the grid Neovim
-    // anchored it to (win_float_pos' anchor_grid). The screen (grid 1) is the
-    // whole main window; a window's grid is the text area of its editor view
-    // (minus its external columns and winbar, which are part of the grid but
-    // which the editor does not show); another float's grid is that float's own
-    // position.
-    struct GridOrigin {
-        QPointF origin; // in the main window's coordinates
-        int row = 0;    // the screen cell that origin is at
-        int col = 0;
-    };
-
-    QHash<int, GridOrigin> origins; // of the grids the floats reported
-    const std::function<GridOrigin(int, int)> originOf = [&](int grid, int depth) -> GridOrigin {
-        if (depth > 8) // a cycle, or nesting too deep: fall back to the screen
-            return GridOrigin();
-
-        if (const auto known = origins.constFind(grid); known != origins.constEnd())
-            return known.value();
-
-        if (grid != 1) {
-            if (auto floatState = mFloats.constFind(grid);
-                floatState != mFloats.constEnd() and floatState->isFloat) {
-                const GridOrigin anchor = originOf(floatState->anchorGrid, depth + 1);
-                GridOrigin origin;
-                origin.origin = anchor.origin
-                                + QPointF((floatState->col - anchor.col) * cellWidth,
-                                          (floatState->row - anchor.row) * cellHeight);
-                origin.row = floatState->row;
-                origin.col = floatState->col;
-                origins.insert(grid, origin);
-                return origin;
-            }
-
-            // A window's grid: the window is shown in an editor view.
-            for (const WindowState &windowState : mWindows) {
-                if (windowState.grid != grid or !windowState.editor or !windowState.view)
-                    continue;
-                auto *windowTextEditor
-                    = qobject_cast<TextEditor::TextEditorWidget *>(windowState.editor->widget());
-                if (windowTextEditor) {
-                    GridOrigin origin;
-                    origin.origin = editorTextOrigin(windowTextEditor) - windowOrigin
-                                    - QPointF(windowState.textoff * cellWidth,
-                                              windowState.winbar * cellHeight);
-                    origin.row = windowState.startRow;
-                    origin.col = windowState.startCol;
-                    origins.insert(grid, origin);
-                    return origin;
-                }
-                break;
-            }
-        }
-
-        return GridOrigin(); // the screen: the window's top left corner
-    };
+    // Qt Creator's status bar is below the editor area, but it can be an
+    // overlay on top of it: never put a float placed in a view under it.
+    int statusBarTop = mainWindow->height();
+    if (QStatusBar *statusBar = mainWindow->statusBar(); statusBar and statusBar->isVisible())
+        statusBarTop = statusBar->mapTo(mainWindow, QPoint(0, 0)).y();
 
     // Neovim's compindex is the order the floats are stacked in: place them in
     // it, so that raising each one leaves the last (topmost) one on top.
@@ -2827,11 +2746,6 @@ void QNVimCore::placeFloats() {
     std::sort(grids.begin(), grids.end(), [this](int first, int second) {
         return mFloats.value(first).compindex < mFloats.value(second).compindex;
     });
-
-    // The rectangles (in screen cells) of the floats classified as belonging to
-    // the editor in this pass, so that a float lying inside one of them (a
-    // plugin's scrollbar inside its menu) is classified the same way.
-    QList<QPair<QRect, bool>> editorFloats;
 
     for (const int grid : grids) {
         auto floatState = mFloats.find(grid);
@@ -2850,70 +2764,73 @@ void QNVimCore::placeFloats() {
             continue;
         }
 
-        // A float Neovim anchors to the screen is positioned in Neovim's screen
-        // cells, which qnvim maps onto the whole main window. A plugin that
-        // wants a popup at the cursor or at the cmdline, though, computes a
-        // cell of the editor's layout (screenpos(), screenline(), ...) and
-        // opens an editor-anchored float there: that one belongs to the editor
-        // view, like the floats Neovim anchors to a window itself. Tall floats
-        // are pickers and other panes: they are positioned against the window,
-        // not the cursor.
-        if (floatState->anchorGrid == 1) {
-            if (floatState->classifiedRow != floatState->row
-                or floatState->classifiedCol != floatState->col) {
-                floatState->classifiedRow = floatState->row;
-                floatState->classifiedCol = floatState->col;
-                floatState->cursorGrid = 0;
-                floatState->atCmdline = false;
-                const bool small = mHeight <= 0 or widget->rows() * 3 <= mHeight * 2;
-                const bool atCursorRow = qAbs(floatState->row - cursorRow) <= 1
-                                         or qAbs(floatState->row + widget->rows() - cursorRow)
-                                                <= 1;
-                const bool belowText
-                    = floatState->row + widget->rows() > textEndRow; // the cmdline
-                if (cursorGrid and small and (atCursorRow or belowText)) {
-                    floatState->cursorGrid = cursorGrid;
-                    floatState->atCmdline = belowText;
+        const QSize gridSize = widget->gridSize();
+
+        // Neovim anchors a float to the screen (grid 1) or to a window's grid
+        // (win_float_pos' anchor_grid). A float anchored to a window is placed
+        // through the editor view that shows that window: Neovim's window
+        // layout is not Qt Creator's editor layout (the views can be anywhere
+        // in the main window), so the window's cell on Neovim's screen is not
+        // where its text is shown. Every other float stays at its screen cell,
+        // which is a cell of the whole main window.
+        WindowState *windowState = nullptr;
+        if (floatState->anchorGrid != 1) {
+            for (auto it = mWindows.begin(); it != mWindows.end(); ++it) {
+                if (it->grid == floatState->anchorGrid and it->editor) {
+                    windowState = &it.value();
+                    break;
                 }
             }
+        }
 
-            // A float that lies inside one already classified (a plugin's
-            // scrollbar inside its menu) belongs with it.
-            const QRect floatRect(floatState->col, floatState->row, widget->cols(),
-                                  widget->rows());
-            if (!floatState->cursorGrid) {
-                for (const auto &[rect, cmdline] : editorFloats) {
-                    if (rect.contains(floatRect)) {
-                        floatState->cursorGrid = cursorGrid;
-                        floatState->atCmdline = cmdline;
-                        break;
-                    }
-                }
+        bool placedInEditor = false;
+        if (windowState) {
+            auto targetEditor = windowState->editor
+                                    ? qobject_cast<TextEditor::TextEditorWidget *>(
+                                          windowState->editor->widget())
+                                    : nullptr;
+            if (targetEditor) {
+                // The window's grid starts textoff columns and winbar rows
+                // before the first character of the text. Move the float from
+                // the window's screen cell to the editor view's text area,
+                // then add its offset from the window's top left corner.
+                const QPoint gridOrigin
+                    = editorTextOrigin(targetEditor) - mainWindowOrigin
+                      - QPoint(qRound(windowState->textoff * cellWidth),
+                               qRound(windowState->winbar * cellHeight));
+                QPoint origin
+                    = gridOrigin
+                      + QPoint(qRound((floatState->col - windowState->startCol) * cellWidth),
+                               qRound((floatState->row - windowState->startRow) * cellHeight));
+
+                // The editor view's text ends above qnvim's command line
+                // widget (and above Qt Creator's status bar if it overlays
+                // the view): keep the whole float there, so a completion menu
+                // does not cover the command line.
+                const int textBottom
+                    = targetEditor->mapTo(mainWindow, QPoint(0, targetEditor->height())).y();
+                const int bottom = qMin(textBottom, statusBarTop);
+                origin.setY(qMin(origin.y(), bottom - gridSize.height()));
+
+                // Keep the float inside the main window horizontally; the
+                // vertical position is already clamped above.
+                origin.setX(qBound(0, origin.x(),
+                                   qMax(0, mainWindow->width() - gridSize.width())));
+                origin.setY(qBound(0, origin.y(), qMax(0, bottom - gridSize.height())));
+
+                widget->setGeometry(QRect(origin, gridSize));
+                widget->show();
+                widget->raise();
+                placedInEditor = true;
             }
-            if (floatState->cursorGrid)
-                editorFloats.append({floatRect, floatState->atCmdline});
-        } else {
-            floatState->cursorGrid = 0;
-            floatState->atCmdline = false;
         }
 
-        const int anchorGrid = floatState->anchorGrid == 1 and floatState->cursorGrid
-                                   ? floatState->cursorGrid
-                                   : floatState->anchorGrid;
-        const GridOrigin anchor = originOf(anchorGrid, 0);
-        QPointF origin = anchor.origin
-                         + QPointF((floatState->col - anchor.col) * cellWidth,
-                                   (floatState->row - anchor.row) * cellHeight);
+        if (placedInEditor)
+            continue;
 
-        if (floatState->atCmdline) {
-            // Neovim's screen has the cmdline right below the window's text,
-            // the editor view has its cmdline widget there. Keep the float
-            // above it, so that a completion menu for a `:` command does not
-            // cover the command being typed.
-            origin.setY(qMin(origin.y(), textBottom - widget->rows() * cellHeight));
-        }
-
-        widget->setGeometry(QRect(origin.toPoint(), widget->gridSize()));
+        const QPoint origin = QPointF(floatState->col * cellWidth,
+                                      floatState->row * cellHeight).toPoint();
+        widget->setGeometry(QRect(origin, gridSize));
         widget->show();
         widget->raise();
     }
