@@ -2221,40 +2221,18 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 if (!editor or !mBuffers.contains(editor))
                     return;
 
-                [[maybe_unused]] Core::IEditor *e = nullptr;
-                mSettingBufferFromVim = buffer;
-                if (!filename.isEmpty() and filename != this->filename(editor)) {
-                    if (mEditors.contains(buffer)) {
-                        if (editor != mEditors[buffer]) {
-                            Core::EditorManager::activateEditor(
-                                mEditors[buffer]);
-                            e = mEditors[buffer];
-                        }
-                    } else {
-                        if (bufferType.isEmpty() && QFile::exists(filename)) {
-                            if (alwaysText)
-                                e = openTextEditor(Utils::FilePath::fromString(filename));
-                            else
-                                e = Core::EditorManager::openEditor(Utils::FilePath::fromString(filename));
-                        } else {
-                            if (bufferType == "terminal") {
-                                e = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);
-                            } else if (bufferType == "help") {
-                                e = Core::EditorManager::openEditorWithContents("Help", &filename, QByteArray(), filename);
-                                e->document()->setFilePath(Utils::FilePath::fromString(filename));
-                                e->document()->setPreferredDisplayName(filename);
-                            } else {
-                                e = Core::EditorManager::openEditorWithContents("Terminal", &filename, QByteArray(), filename);
-                            }
-                        }
-                    }
+                if (filename.isEmpty() or filename == this->filename(editor))
+                    return;
+
+                if (mEditors.contains(buffer)) {
+                    // The buffer is shown in some editor already; activate it
+                    // rather than opening another one for it.
+                    if (editor != mEditors[buffer])
+                        Core::EditorManager::activateEditor(mEditors[buffer]);
+                    return;
                 }
-                mSettingBufferFromVim = 0;
-                // if (filename.isEmpty()) {
-                //     // callback();
-                // } else {
-                //     connect(mNVim->api2()->nvim_command("try | silent only! | catch | endtry"), &NeovimQt::MsgpackRequest::finished, callback);
-                // }
+
+                openEditorForBuffer(buffer, filename, bufferType, alwaysText);
             } else if (cmd == "BufDelete") {
                 if (bufferListed)
                     closeEditorsForBuffer(buffer);
