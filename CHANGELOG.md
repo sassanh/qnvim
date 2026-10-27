@@ -8,9 +8,11 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
-- Floating windows are placed by the anchor Neovim reports (`win_float_pos`' `anchor_grid`): a float anchored to a window (including one anchored to the cursor in that window) is shown in that window's editor view, at the position it has relative to the window. Floats anchored to the screen stay at their screen cell in the main window (pickers, dashboard, notifications) ([#66](https://github.com/sassanh/qnvim/issues/66)).
+- Floating windows are placed by the anchor Neovim reports (`win_float_pos`' `anchor_grid`): a float anchored to a window (including one anchored to the cursor in that window) is shown in that window's editor view, at the position it has relative to the window. A float anchored to another float (a completion menu's scrollbar or its documentation window) follows that float's overlay. Floats anchored to the screen stay at their screen cell in the main window (pickers, dashboard, notifications) ([#66](https://github.com/sassanh/qnvim/issues/66)).
 
 - The command line is drawn above Qt Creator's status bar instead of behind it: the visible widget is an overlay in the main window, while an invisible placeholder keeps its space in the editor view's layout ([#66](https://github.com/sassanh/qnvim/issues/66)).
+
+- Placing the first floating window of a session no longer leaves an empty strip at the bottom of the main window: qnvim read the status bar with `QMainWindow::statusBar()`, which creates one when the main window has none (Qt Creator puts its own status bar into the window's layout instead of setting it with `setStatusBar()`), so an empty status bar stayed below the bottom bar until Qt Creator was restarted. It asks `Core::ICore::statusBar()` for the status bar instead.
 
 ## [20.0.3](https://github.com/sassanh/qnvim/tree/v20.0.3) (2026-10-24)
 

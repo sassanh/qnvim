@@ -2736,8 +2736,13 @@ void QNVimCore::placeFloats() {
 
     // Qt Creator's status bar is below the editor area, but it can be an
     // overlay on top of it: never put a float placed in a view under it.
+    // Ask Core for the status bar: Qt Creator puts its own into the main
+    // window's layout instead of setting it with QMainWindow::setStatusBar(),
+    // so QMainWindow::statusBar() would create an empty status bar there and
+    // leave a strip at the bottom of the window for the rest of the session.
     int statusBarTop = mainWindow->height();
-    if (QStatusBar *statusBar = mainWindow->statusBar(); statusBar and statusBar->isVisible())
+    if (QStatusBar *statusBar = Core::ICore::statusBar();
+        statusBar and statusBar->isVisible())
         statusBarTop = statusBar->mapTo(mainWindow, QPoint(0, 0)).y();
 
     // Neovim's compindex is the order the floats are stacked in: place them in
@@ -2827,6 +2832,26 @@ void QNVimCore::placeFloats() {
 
         if (placedInEditor)
             continue;
+
+        // A float anchored to another float (a completion menu's scrollbar or
+        // documentation window) is an offset from that float's overlay: follow
+        // it, since the anchor's own cell has no relation to the overlay.
+        if (floatState->anchorGrid != 1) {
+            auto anchor = mFloats.find(floatState->anchorGrid);
+            if (anchor != mFloats.end() and anchor->widget) {
+                QPoint origin
+                    = anchor->widget->geometry().topLeft()
+                      + QPoint(qRound((floatState->col - anchor->col) * cellWidth),
+                               qRound((floatState->row - anchor->row) * cellHeight));
+                origin.setX(qBound(0, origin.x(),
+                                   qMax(0, mainWindow->width() - gridSize.width())));
+                origin.setY(qBound(0, origin.y(), qMax(0, statusBarTop - gridSize.height())));
+                widget->setGeometry(QRect(origin, gridSize));
+                widget->show();
+                widget->raise();
+                continue;
+            }
+        }
 
         const QPoint origin = QPointF(floatState->col * cellWidth,
                                       floatState->row * cellHeight).toPoint();

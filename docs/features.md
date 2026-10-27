@@ -52,6 +52,8 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
   the editor view that shows that window, so a completion menu or hover popup
   stays next to the text it belongs to even though Qt Creator's editor layout
   differs from Neovim's window layout.
+- A float anchored to another float (a completion menu's scrollbar or its
+  documentation window) follows that float's overlay.
 
 ## Command line and messages
 
