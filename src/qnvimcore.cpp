@@ -46,7 +46,6 @@
 #include <QScrollBar>
 #include <QSplitter>
 #include <QStandardPaths>
-#include <QStatusBar>
 #include <QStringList>
 #include <QStyleHints>
 #include <QTextBlock>
@@ -56,7 +55,6 @@
 #include <QThread>
 #include <QTimer>
 
-#include <algorithm>
 #include <functional>
 
 namespace QNVim {
@@ -163,7 +161,7 @@ QNVimCore::QNVimCore(QObject *parent)
         qCritical(Main) << "Neovim:" << mNVim->errorString() << "- QNVim functionality is unavailable";
         // The overlays of Neovim's floating windows have nothing to show any
         // more.
-        clearFloats();
+        mFloatLayer.clearFloats();
     });
 
     connect(mNVim, &NeovimQt::NeovimConnector::ready, this, &QNVimCore::setupNeovim);
@@ -191,7 +189,7 @@ QNVimCore::~QNVimCore()
 
     // The overlays of Neovim's floating windows live in Qt Creator's main
     // window; drop them before anything else goes away.
-    clearFloats();
+    mFloatLayer.clearFloats();
     if (mNVim and mNVim->isReady()) {
         auto request = mNVim->api2()->nvim_command("q!");
         connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
@@ -2283,7 +2281,12 @@ void QNVimCore::redraw(const QVariantList &args) {
 
         // The float overlays may have to move: they are placed relative to the
         // text area of the current editor, which may have changed.
-        placeFloats();
+        Core::IEditor *currentEditor = Core::EditorManager::currentEditor();
+        mFloatLayer.place(windowAnchors(),
+                          currentEditor
+                              ? qobject_cast<TextEditor::TextEditorWidget *>(
+                                    currentEditor->widget())
+                              : nullptr);
     }
 
     if (shouldSync and flush)
@@ -2304,9 +2307,7 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
             if (grid and win) {
                 // A grid remembered before it turned out to be a window's (its
                 // content may have arrived first) is not a float.
-                if (auto state = mFloats.find(grid);
-                    state != mFloats.end() and !state->isFloat)
-                    closeFloat(grid);
+                mFloatLayer.forgetGrid(grid);
 
                 WindowState &st = mWindows[win];
                 st.startRow = args[2].toInt();
@@ -2325,9 +2326,7 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
         if (args.size() >= 2) {
             const int grid = args[0].toInt();
             const int win = args[1].toInt();
-            if (auto state = mFloats.find(grid);
-                state != mFloats.end() and !state->isFloat)
-                closeFloat(grid);
+            mFloatLayer.forgetGrid(grid);
 
             auto windowState = mWindows.find(win);
             if (grid and windowState != mWindows.end() and windowState.value().grid != grid) {
@@ -2348,31 +2347,20 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
             const int grid = args[0].toInt();
             const int win = args[1].toInt();
             if (grid and win) {
-                FloatState &st = mFloats[grid];
-                st.isFloat = true;
-                st.visible = true;
-                st.anchorGrid = args[3].toInt();
-                st.compindex = args[8].toInt();
-                st.row = args[9].toInt();
-                st.col = args[10].toInt();
+                mFloatLayer.floatPositioned(grid, args[3].toInt(), args[8].toInt(),
+                                            args[9].toInt(), args[10].toInt());
             }
         }
     } else if (command == "win_hide") {
         // ["win_hide", grid]: the window is not shown right now; it may come
         // back (e.g. when its tabpage is entered again).
-        if (!args.isEmpty()) {
-            auto floatState = mFloats.find(args[0].toInt());
-            if (floatState != mFloats.end() and floatState->isFloat) {
-                floatState->visible = false;
-                if (floatState->widget)
-                    floatState->widget->hide();
-            }
-        }
+        if (!args.isEmpty())
+            mFloatLayer.hideFloat(args[0].toInt());
     } else if (command == "win_close") {
         // ["win_close", grid]: the float is closed (its grid follows with
         // grid_destroy).
         if (!args.isEmpty())
-            closeFloat(args[0].toInt());
+            mFloatLayer.closeFloat(args[0].toInt());
     } else if (command == "grid_resize") {
         // ["grid_resize", grid, width, height]
         if (args.size() >= 3) {
@@ -2382,9 +2370,8 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
             if (grid == 1) {
                 mWidth = width;
                 mHeight = height;
-            } else {
-                rememberGrid(grid);
-                setFloatGridSize(grid, height, width);
+            } else if (!isWindowGrid(grid)) {
+                mFloatLayer.setFloatGridSize(grid, height, width);
             }
         }
     } else if (command == "grid_line") {
@@ -2393,8 +2380,8 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
         if (args.size() >= 4) {
             const int grid = args[0].toInt();
             if (!isWindowGrid(grid)) {
-                rememberGrid(grid);
-                setFloatGridLine(grid, args[1].toInt(), args[2].toInt(), args[3].toList());
+                mFloatLayer.setFloatGridLine(grid, args[1].toInt(), args[2].toInt(),
+                                             args[3].toList());
             }
         }
     } else if (command == "grid_scroll") {
@@ -2402,45 +2389,29 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
         if (args.size() >= 7) {
             const int grid = args[0].toInt();
             if (!isWindowGrid(grid)) {
-                rememberGrid(grid);
-                scrollFloatGrid(grid, args[1].toInt(), args[2].toInt(), args[3].toInt(),
-                                args[4].toInt(), args[5].toInt(), args[6].toInt());
+                mFloatLayer.scrollFloatGrid(grid, args[1].toInt(), args[2].toInt(),
+                                            args[3].toInt(), args[4].toInt(), args[5].toInt(),
+                                            args[6].toInt());
             }
         }
     } else if (command == "grid_clear") {
         // ["grid_clear", grid]
         if (!args.isEmpty()) {
             const int grid = args[0].toInt();
-            if (!isWindowGrid(grid)) {
-                rememberGrid(grid);
-                clearFloatGrid(grid);
-            }
+            if (!isWindowGrid(grid))
+                mFloatLayer.clearFloatGrid(grid);
         }
     } else if (command == "grid_destroy") {
         // ["grid_destroy", grid]: the grid will not be used any more.
-        if (!args.isEmpty()) {
-            const int grid = args[0].toInt();
-            mGridSizes.remove(grid);
-            closeFloat(grid);
-        }
+        if (!args.isEmpty())
+            mFloatLayer.destroyGrid(args[0].toInt());
     } else if (command == "hl_attr_define") {
         // ["hl_attr_define", id, rgb_attr, cterm_attr, info]: the colors and
         // styles the floats are drawn with (the editors use Qt Creator's
         // colors). The rgb attributes are resolved colors, or -1 for a color
         // Neovim leaves to the UI.
-        if (args.size() >= 2) {
-            const QVariantMap attributes = args[1].toMap();
-            HlAttr &hl = mHlAttrs[args[0].toInt()];
-            const int foreground = attributes.value("foreground", -1).toInt();
-            const int background = attributes.value("background", -1).toInt();
-            hl.foreground = foreground < 0 ? QColor() : QColor::fromRgb(QRgb(foreground));
-            hl.background = background < 0 ? QColor() : QColor::fromRgb(QRgb(background));
-            hl.blend = attributes.value("blend", 0).toInt();
-            hl.reverse = attributes.value("reverse", false).toBool();
-            hl.bold = attributes.value("bold", false).toBool();
-            hl.italic = attributes.value("italic", false).toBool();
-            hl.underline = attributes.value("underline", false).toBool();
-        }
+        if (args.size() >= 2)
+            mFloatLayer.setHighlight(args[0].toInt(), args[1].toMap());
     } else if (command == "bell") {
         QApplication::beep();
     } else if (command == "mode_change") {
@@ -2473,6 +2444,8 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
                 textEditor->setPalette(palette);
             }
         }
+
+        mFloatLayer.setDefaultColors(mForegroundColor, mBackgroundColor);
     } else if (command == "cmdline_show") {
         auto content = QByteArray();
         for (const auto &contentItem : args[0].toList())
@@ -2530,46 +2503,6 @@ void QNVimCore::updateCursorSize() {
         mNumbersColumn->updateGeometry();
 }
 
-// Neovim's floating windows (a picker, a hover popup, ...) are mirrored as
-// overlays inside Qt Creator's main window. Neovim sends the float's position
-// on its screen (win_float_pos: screen_row/screen_col, cells of grid 1) and the
-// cells of its grid (grid_line, grid_scroll, grid_clear, grid_resize), and the
-// overlay draws them with the editor's font. Neovim's screen is the text area
-// of the current editor (grid 1 is sized to it, see fixSize()), so that editor
-// gives both the font and the position of the cells on the screen.
-FloatCell QNVimCore::floatCell(int hlId, const QString &text) const {
-    auto attribute = mHlAttrs.constFind(hlId);
-    const HlAttr hl = attribute == mHlAttrs.constEnd() ? HlAttr() : attribute.value();
-
-    QColor foreground = hl.foreground.isValid() ? hl.foreground : mForegroundColor;
-    QColor background = hl.background.isValid() ? hl.background : mBackgroundColor;
-    if (hl.reverse)
-        qSwap(foreground, background);
-    if (hl.blend > 0)
-        background.setAlpha(255 * (100 - hl.blend) / 100);
-
-    FloatCell cell;
-    cell.text = text;
-    cell.foreground = foreground;
-    cell.background = background;
-    cell.bold = hl.bold;
-    cell.italic = hl.italic;
-    cell.underline = hl.underline;
-    return cell;
-}
-
-// A grid Neovim draws in: qnvim remembers its content as soon as an event for it
-// arrives, because the event that says what the grid is (win_float_pos for a
-// float, win_pos for a window) can come later. A grid that turns out to be a
-// window's is dropped again (see redrawEvent()); the screen (grid 1) is not a
-// grid qnvim draws.
-void QNVimCore::rememberGrid(int grid) {
-    if (grid == 1 or mFloats.contains(grid) or isWindowGrid(grid))
-        return;
-
-    mFloats.insert(grid, FloatState());
-}
-
 bool QNVimCore::isWindowGrid(int grid) const {
     for (const auto &windowState : mWindows) {
         if (windowState.grid == grid)
@@ -2579,264 +2512,28 @@ bool QNVimCore::isWindowGrid(int grid) const {
     return false;
 }
 
-FloatWidget *QNVimCore::floatWidget(int grid) {
-    auto floatState = mFloats.find(grid);
-    if (floatState == mFloats.end())
-        return nullptr;
-
-    if (!floatState->widget) {
-        auto mainWindow = Core::ICore::mainWindow();
-        if (!mainWindow)
-            return nullptr;
-
-        floatState->widget = new FloatWidget(mainWindow);
-        if (const QSize size = mGridSizes.value(grid); size.isValid())
-            floatState->widget->resizeGrid(size.height(), size.width());
-        floatState->widget->hide(); // placeFloats() shows it
-    }
-
-    return floatState->widget;
-}
-
-void QNVimCore::setFloatGridSize(int grid, int rows, int cols) {
-    mGridSizes.insert(grid, QSize(cols, rows));
-
-    if (mFloats.contains(grid))
-        if (FloatWidget *widget = floatWidget(grid))
-            widget->resizeGrid(rows, cols);
-}
-
-void QNVimCore::setFloatGridLine(int grid, int row, int col, const QVariantList &cells) {
-    FloatWidget *widget = floatWidget(grid);
-    if (!widget)
-        return;
-
-    QVector<FloatCell> line;
-    int hlId = 0;
-    for (const QVariant &cellValue : cells) {
-        const QVariantList cell = cellValue.toList();
-        if (cell.isEmpty())
+// The position and external columns of the windows that have a grid and an
+// editor, as the float layer needs them to place the floats anchored to the
+// windows (see FloatLayer::place()).
+QList<FloatLayer::WindowAnchor> QNVimCore::windowAnchors() const {
+    QList<FloatLayer::WindowAnchor> anchors;
+    for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
+        const WindowState &st = it.value();
+        if (!st.grid or !st.editor)
             continue;
 
-        const QString text = QString::fromUtf8(cell[0].toByteArray());
-        if (cell.size() >= 2)
-            hlId = cell[1].toInt();
-        const int repeat = cell.size() >= 3 ? cell[2].toInt() : 1;
-
-        // A cell can hold more than one character, and the right half of a
-        // double width character is a cell with an empty text.
-        for (int r = 0; r < repeat; ++r) {
-            for (int i = 0; i < text.size(); ++i) {
-                QString character = text.at(i);
-                if (character.at(0).isHighSurrogate() and i + 1 < text.size())
-                    character += text.at(++i);
-                line.append(floatCell(hlId, character));
-            }
-        }
+        FloatLayer::WindowAnchor anchor;
+        anchor.grid = st.grid;
+        anchor.startRow = st.startRow;
+        anchor.startCol = st.startCol;
+        anchor.textoff = st.textoff;
+        anchor.winbar = st.winbar;
+        anchor.editor = st.editor;
+        anchor.textEditor = qobject_cast<TextEditor::TextEditorWidget *>(st.editor->widget());
+        anchors.append(anchor);
     }
 
-    widget->setLine(row, col, line);
-}
-
-void QNVimCore::scrollFloatGrid(int grid, int top, int bot, int left, int right, int rows,
-                                int cols) {
-    if (FloatWidget *widget = floatWidget(grid))
-        widget->scrollGrid(top, bot, left, right, rows, cols);
-}
-
-void QNVimCore::clearFloatGrid(int grid) {
-    if (FloatWidget *widget = floatWidget(grid))
-        widget->clearGrid();
-}
-
-void QNVimCore::closeFloat(int grid) {
-    auto floatState = mFloats.find(grid);
-    if (floatState == mFloats.end())
-        return;
-
-    delete floatState->widget.data();
-    mFloats.erase(floatState);
-}
-
-void QNVimCore::clearFloats() {
-    for (auto &floatState : mFloats) {
-        delete floatState.widget.data();
-        floatState.widget = nullptr;
-    }
-    mFloats.clear();
-}
-
-// Where the editor draws the first character of its first visible row, in
-// global coordinates. The extra area (line numbers, marks, folding markers) is
-// outside the viewport, so the cursor rects are the way to ask.
-static QPoint editorTextOrigin(const TextEditor::TextEditorWidget *textEditor) {
-    const QTextCursor firstVisibleCursor = textEditor->cursorForPosition(QPoint(0, 0));
-    QTextCursor firstColumnCursor = firstVisibleCursor;
-    firstColumnCursor.movePosition(QTextCursor::StartOfBlock);
-    const QPoint viewport = textEditor->viewport()->mapToGlobal(QPoint(0, 0));
-    return viewport + QPoint(textEditor->cursorRect(firstColumnCursor).x(),
-                             textEditor->cursorRect(firstVisibleCursor).y());
-}
-
-// Neovim reports every float's position in cells of its screen (win_float_pos'
-// screen_row/screen_col) and the grid it is anchored to (anchor_grid). qnvim
-// sizes the screen (grid 1) to the whole main window, so a float anchored to
-// the screen is shown at that cell of the main window. A float anchored to a
-// window is placed through the editor view of that window instead: the
-// window's cell on Neovim's screen is not where Qt Creator shows its text,
-// since the views can be anywhere in the main window.
-void QNVimCore::placeFloats() {
-    if (mFloats.isEmpty())
-        return;
-
-    auto mainWindow = Core::ICore::mainWindow();
-    auto currentEditor = Core::EditorManager::currentEditor();
-    auto currentTextEditor = currentEditor
-                                 ? qobject_cast<TextEditor::TextEditorWidget *>(
-                                       currentEditor->widget())
-                                 : nullptr;
-    if (!mainWindow or !currentTextEditor) {
-        for (auto &floatState : mFloats) {
-            if (floatState.widget)
-                floatState.widget->hide();
-        }
-        return;
-    }
-
-    const QFont font = currentTextEditor->textDocument()->fontSettings().font();
-    const QFontMetricsF metrics(font);
-    const qreal cellWidth = metrics.horizontalAdvance(QLatin1Char('A'));
-    const qreal cellHeight = metrics.lineSpacing();
-    if (cellWidth <= 0 or cellHeight <= 0)
-        return;
-
-    const QPoint mainWindowOrigin = mainWindow->mapToGlobal(QPoint(0, 0));
-
-    // Qt Creator's status bar is below the editor area, but it can be an
-    // overlay on top of it: never put a float placed in a view under it.
-    // Ask Core for the status bar: Qt Creator puts its own into the main
-    // window's layout instead of setting it with QMainWindow::setStatusBar(),
-    // so QMainWindow::statusBar() would create an empty status bar there and
-    // leave a strip at the bottom of the window for the rest of the session.
-    int statusBarTop = mainWindow->height();
-    if (QStatusBar *statusBar = Core::ICore::statusBar();
-        statusBar and statusBar->isVisible())
-        statusBarTop = statusBar->mapTo(mainWindow, QPoint(0, 0)).y();
-
-    // Neovim's compindex is the order the floats are stacked in: place them in
-    // it, so that raising each one leaves the last (topmost) one on top.
-    QList<int> grids = mFloats.keys();
-    std::sort(grids.begin(), grids.end(), [this](int first, int second) {
-        return mFloats.value(first).compindex < mFloats.value(second).compindex;
-    });
-
-    for (const int grid : grids) {
-        auto floatState = mFloats.find(grid);
-        if (floatState == mFloats.end() or !floatState->isFloat)
-            continue;
-
-        FloatWidget *widget = floatWidget(grid);
-        if (!widget)
-            continue;
-
-        widget->setGridFont(font);
-        widget->setDefaultColors(mForegroundColor, mBackgroundColor);
-
-        if (!floatState->visible or widget->rows() <= 0 or widget->cols() <= 0) {
-            widget->hide();
-            continue;
-        }
-
-        const QSize gridSize = widget->gridSize();
-
-        // Neovim anchors a float to the screen (grid 1) or to a window's grid
-        // (win_float_pos' anchor_grid). A float anchored to a window is placed
-        // through the editor view that shows that window: Neovim's window
-        // layout is not Qt Creator's editor layout (the views can be anywhere
-        // in the main window), so the window's cell on Neovim's screen is not
-        // where its text is shown. Every other float stays at its screen cell,
-        // which is a cell of the whole main window.
-        WindowState *windowState = nullptr;
-        if (floatState->anchorGrid != 1) {
-            for (auto it = mWindows.begin(); it != mWindows.end(); ++it) {
-                if (it->grid == floatState->anchorGrid and it->editor) {
-                    windowState = &it.value();
-                    break;
-                }
-            }
-        }
-
-        bool placedInEditor = false;
-        if (windowState) {
-            auto targetEditor = windowState->editor
-                                    ? qobject_cast<TextEditor::TextEditorWidget *>(
-                                          windowState->editor->widget())
-                                    : nullptr;
-            if (targetEditor) {
-                // The window's grid starts textoff columns and winbar rows
-                // before the first character of the text. Move the float from
-                // the window's screen cell to the editor view's text area,
-                // then add its offset from the window's top left corner.
-                const QPoint gridOrigin
-                    = editorTextOrigin(targetEditor) - mainWindowOrigin
-                      - QPoint(qRound(windowState->textoff * cellWidth),
-                               qRound(windowState->winbar * cellHeight));
-                QPoint origin
-                    = gridOrigin
-                      + QPoint(qRound((floatState->col - windowState->startCol) * cellWidth),
-                               qRound((floatState->row - windowState->startRow) * cellHeight));
-
-                // The editor view's text ends above qnvim's command line
-                // widget (and above Qt Creator's status bar if it overlays
-                // the view): keep the whole float there, so a completion menu
-                // does not cover the command line.
-                const int textBottom
-                    = targetEditor->mapTo(mainWindow, QPoint(0, targetEditor->height())).y();
-                const int bottom = qMin(textBottom, statusBarTop);
-                origin.setY(qMin(origin.y(), bottom - gridSize.height()));
-
-                // Keep the float inside the main window horizontally; the
-                // vertical position is already clamped above.
-                origin.setX(qBound(0, origin.x(),
-                                   qMax(0, mainWindow->width() - gridSize.width())));
-                origin.setY(qBound(0, origin.y(), qMax(0, bottom - gridSize.height())));
-
-                widget->setGeometry(QRect(origin, gridSize));
-                widget->show();
-                widget->raise();
-                placedInEditor = true;
-            }
-        }
-
-        if (placedInEditor)
-            continue;
-
-        // A float anchored to another float (a completion menu's scrollbar or
-        // documentation window) is an offset from that float's overlay: follow
-        // it, since the anchor's own cell has no relation to the overlay.
-        if (floatState->anchorGrid != 1) {
-            auto anchor = mFloats.find(floatState->anchorGrid);
-            if (anchor != mFloats.end() and anchor->widget) {
-                QPoint origin
-                    = anchor->widget->geometry().topLeft()
-                      + QPoint(qRound((floatState->col - anchor->col) * cellWidth),
-                               qRound((floatState->row - anchor->row) * cellHeight));
-                origin.setX(qBound(0, origin.x(),
-                                   qMax(0, mainWindow->width() - gridSize.width())));
-                origin.setY(qBound(0, origin.y(), qMax(0, statusBarTop - gridSize.height())));
-                widget->setGeometry(QRect(origin, gridSize));
-                widget->show();
-                widget->raise();
-                continue;
-            }
-        }
-
-        const QPoint origin = QPointF(floatState->col * cellWidth,
-                                      floatState->row * cellHeight).toPoint();
-        widget->setGeometry(QRect(origin, gridSize));
-        widget->show();
-        widget->raise();
-    }
+    return anchors;
 }
 
 } // namespace Internal
