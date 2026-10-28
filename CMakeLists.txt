@@ -11,6 +11,20 @@ endif()
 
 project(QNVim)
 
+# Qt6_DIR alone is not enough: neovim-qt still calls find_package(QT NAMES Qt6),
+# which consults QT_DIR and the default system prefixes, and Qt's tool packages
+# (Qt6CoreTools, Qt6GuiTools, ...) can otherwise resolve to another Qt
+# installation. Derive the Qt prefix from Qt6_DIR and drop cached Qt package
+# directories from a different installation so every Qt component comes from the
+# Qt that was requested.
+if(Qt6_DIR)
+  # The legacy QT package used by neovim-qt caches its directory separately.
+  set(QT_DIR
+      "${Qt6_DIR}"
+      CACHE PATH "Qt package directory" FORCE)
+
+endif()
+
 option(FETCH_QTC "Download Qt Creator development files automatically" ON)
 
 add_subdirectory(external)
