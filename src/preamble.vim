@@ -25,7 +25,7 @@ execute "autocmd BufReadCmd * :call rpcnotify(g:neovim_channel, 'Gui', 'fileAuto
 execute "autocmd BufReadCmd * if &buftype ==# 'help' | setlocal modifiable | silent! call setline(1, readfile(expand('<afile>:p'))) | setlocal nomodifiable nomodified | endif"
 execute "autocmd TermOpen * :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'TermOpen', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)"
 execute "autocmd BufWriteCmd * :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufWriteCmd', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)|set nomodified"
-execute "autocmd BufEnter * nested :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text, win_gettype() ==# '' ? win_getid() : 0)"
+execute "autocmd BufEnter * nested :if win_gettype() ==# '' | call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufEnter', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text, win_getid()) | endif"
 execute "autocmd BufDelete * nested :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufDelete', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)"
 execute "autocmd BufHidden * nested :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufHidden', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)"
 execute "autocmd BufWipeout * nested :call rpcnotify(g:neovim_channel, 'Gui', 'fileAutoCommand', 'BufWipeout', expand('<abuf>'), expand('<afile>:p'), &buftype, &buflisted, &bufhidden, g:QNVIM_always_text)"
