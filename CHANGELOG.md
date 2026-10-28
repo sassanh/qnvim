@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file. This projec
 
 [Full Changelog](https://github.com/sassanh/qnvim/compare/v20.0.3...HEAD)
 
+**Added**
+
+- `qnvim.float_filter()`: the floating windows the Lua filter accepts are placed as if Neovim anchored them to the current window (their offset from that window is measured in the editor view instead of from the main window's top left corner), for floats that are drawn in Neovim's screen cells but belong to the text. Without a filter, nothing changes.
+
 **Fixed**
 
 - Floating windows are placed by the anchor Neovim reports (`win_float_pos`' `anchor_grid`): a float anchored to a window (including one anchored to the cursor in that window) is shown in that window's editor view, at the position it has relative to the window. A float anchored to another float (a completion menu's scrollbar or its documentation window) follows that float's overlay. Floats anchored to the screen stay at their screen cell in the main window (pickers, dashboard, notifications) ([#66](https://github.com/sassanh/qnvim/issues/66)).

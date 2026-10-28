@@ -23,6 +23,24 @@ window (including one anchored to the cursor in that window) is shown in the
 editor view that displays the window, and a float anchored to Neovim's screen
 is shown at its screen cell in Qt Creator's main window.
 
+A float can also be drawn in cells of Neovim's screen while belonging to the
+text: qnvim has no way to know which view those cells belong to, so it offers a
+filter for them. The floating windows the filter accepts are placed as if
+Neovim anchored them to the current window: their offset from that window is
+measured in the editor view instead of from the main window's top left corner.
+
+```lua
+require('qnvim').float_filter(function(win)
+  return vim.bo[vim.api.nvim_win_get_buf(win)].filetype == 'some-filetype'
+end)
+```
+
+`win` is Neovim's window handle, so the filter can look at anything about the
+window (its buffer, size, config, ...). The answer is remembered per window;
+call `qnvim.float_filter()` again to ask about the windows Neovim already
+showed. Without a filter every float stays at its screen cell;
+`qnvim.float_filter(nil)` goes back to that.
+
 ## `qnvim.vim` and `qnvim.lua`
 
 Put a `qnvim.vim` (or `qnvim.lua`) file in the same directory as your
@@ -128,3 +146,10 @@ The functions send notifications to Qt Creator and need qnvim's RPC channel.
 Neovim loads `init.lua` before qnvim attaches, so requiring the module there is
 fine, but calling these functions at its top level raises an error. Key
 mappings, `VimEnter` autocommands, `qnvim.vim` and `qnvim.lua` run late enough.
+
+`qnvim.float_filter(filter)` chooses the floating windows qnvim places in the
+editing area: `filter(win)` is called for every floating window Neovim shows,
+with Neovim's window handle, and a true result places that float as if Neovim
+anchored it to the current window (see [Floating windows](#floating-windows)).
+Floats anchored to a window or to another float are not affected; `nil` places
+every float at its screen cell again.

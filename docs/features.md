@@ -54,6 +54,9 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
   differs from Neovim's window layout.
 - A float anchored to another float (a completion menu's scrollbar or its
   documentation window) follows that float's overlay.
+- A filter (`qnvim.float_filter()`) can place the floats it accepts as if Neovim
+  anchored them to the current window, for plugins that draw in Neovim's screen
+  cells (see [configuration](configuration.md)).
 
 ## Command line and messages
 

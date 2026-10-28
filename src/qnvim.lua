@@ -27,6 +27,32 @@ function M.trigger_command(...)
   notify('triggerCommand', ...)
 end
 
+--- Choose the floating windows qnvim places in the editing area.
+---
+--- `filter(win)` is called for every floating window Neovim shows (`win` is
+--- Neovim's window handle). When it returns a true value, qnvim places that
+--- window as if Neovim anchored it to the current window: its offset from that
+--- window is measured in the editor view instead of from the main window's top
+--- left corner. Floats anchored to a window or to another float are not
+--- affected. The answer is remembered for the window, so call this again to
+--- ask the filter about the windows Neovim already showed. Pass nil to place
+--- every float at its screen cell again (the default).
+--- @param filter fun(win: integer): boolean|nil
+function M.float_filter(filter)
+  M._float_filter = filter
+  notify('floatFilter', filter ~= nil)
+end
+
+--- Whether qnvim places the floating window in the editing area (qnvim calls
+--- this through QNVimFloatMatches()).
+--- @param win integer
+--- @return boolean
+function M._matches_float(win)
+  if not M._float_filter then return false end
+  local ok, matches = pcall(M._float_filter, win)
+  return ok and matches and true or false
+end
+
 -- The functions below mirror qnvim's Ex commands.
 
 --- Build the current project (:Build).

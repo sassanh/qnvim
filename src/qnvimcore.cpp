@@ -2088,6 +2088,19 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
         if (method == "triggerCommand") {
             for (const auto& methodArg : methodArgs)
                 triggerCommand(methodArg.toByteArray());
+        } else if (method == "floatFilter") {
+            // The user registered (or removed) a float filter
+            // (qnvim.float_filter()): ask it about the floating windows Neovim
+            // already showed, or place them at their screen cells again.
+            mFloatFilterRegistered = methodArgs.value(0).toBool();
+            mFloatFilters.clear();
+            for (auto it = mFloatGrids.cbegin(); it != mFloatGrids.cend(); ++it) {
+                if (mFloatFilterRegistered)
+                    queryFloatFilter(it.value(), it.key());
+                else
+                    mFloatLayer.setFloatInEditorArea(it.value(), false);
+            }
+            placeFloats();
         } else if (method == "winAutoCommand") {
             const QByteArray event = methodArgs.value(0).toByteArray();
             const int win = methodArgs.value(1).toInt();
@@ -2281,12 +2294,7 @@ void QNVimCore::redraw(const QVariantList &args) {
 
         // The float overlays may have to move: they are placed relative to the
         // text area of the current editor, which may have changed.
-        Core::IEditor *currentEditor = Core::EditorManager::currentEditor();
-        mFloatLayer.place(windowAnchors(),
-                          currentEditor
-                              ? qobject_cast<TextEditor::TextEditorWidget *>(
-                                    currentEditor->widget())
-                              : nullptr);
+        placeFloats();
     }
 
     if (shouldSync and flush)
@@ -2347,8 +2355,15 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
             const int grid = args[0].toInt();
             const int win = args[1].toInt();
             if (grid and win) {
-                mFloatLayer.floatPositioned(grid, args[3].toInt(), args[8].toInt(),
-                                            args[9].toInt(), args[10].toInt());
+                const int anchorGrid = args[3].toInt();
+                mFloatGrids.insert(win, grid);
+                mFloatLayer.floatPositioned(grid, anchorGrid, args[8].toInt(), args[9].toInt(),
+                                            args[10].toInt(), mFloatFilters.value(win));
+                // Only a float anchored to the screen can be placed in the
+                // editing area (see FloatLayer::place()).
+                if (mFloatFilterRegistered and anchorGrid == 1
+                    and !mFloatFilters.contains(win))
+                    queryFloatFilter(grid, win);
             }
         }
     } else if (command == "win_hide") {
@@ -2359,8 +2374,19 @@ void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args)
     } else if (command == "win_close") {
         // ["win_close", grid]: the float is closed (its grid follows with
         // grid_destroy).
-        if (!args.isEmpty())
-            mFloatLayer.closeFloat(args[0].toInt());
+        if (!args.isEmpty()) {
+            const int grid = args[0].toInt();
+            // Forget the window's filter answer: win_close reports only the
+            // grid, win_float_pos reported both.
+            for (auto it = mFloatGrids.begin(); it != mFloatGrids.end(); ++it) {
+                if (it.value() == grid) {
+                    mFloatFilters.remove(it.key());
+                    mFloatGrids.erase(it);
+                    break;
+                }
+            }
+            mFloatLayer.closeFloat(grid);
+        }
     } else if (command == "grid_resize") {
         // ["grid_resize", grid, width, height]
         if (args.size() >= 3) {
@@ -2534,6 +2560,39 @@ QList<FloatLayer::WindowAnchor> QNVimCore::windowAnchors() const {
     }
 
     return anchors;
+}
+
+// Place the float overlays: they are placed relative to the text area of the
+// current editor, so they move whenever that changes (see FloatLayer::place()).
+void QNVimCore::placeFloats() {
+    Core::IEditor *currentEditor = Core::EditorManager::currentEditor();
+    mFloatLayer.place(windowAnchors(),
+                      currentEditor
+                          ? qobject_cast<TextEditor::TextEditorWidget *>(currentEditor->widget())
+                          : nullptr);
+}
+
+// Whether a floating window is one the user's filter accepts is up to a Lua
+// function (qnvim.float_filter()), so Neovim has to run it: ask it once per
+// window, remember the answer and place the floats again when it arrives.
+void QNVimCore::queryFloatFilter(int grid, int win) {
+    mFloatFilters.insert(win, false); // ask once per window
+
+    auto apply = [this, grid, win](bool matches) {
+        mFloatFilters.insert(win, matches);
+        mFloatLayer.setFloatInEditorArea(grid, matches);
+        placeFloats();
+    };
+
+    auto request = mNVim->api2()->nvim_call_function(QByteArrayLiteral("QNVimFloatMatches"),
+                                                     {win});
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [apply](quint32, quint64, const QVariant &result) { apply(result.toBool()); });
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [apply](quint32, quint64, const QVariant &error) {
+                qWarning(Main) << "Could not run the float filter:" << error;
+                apply(false);
+            });
 }
 
 } // namespace Internal

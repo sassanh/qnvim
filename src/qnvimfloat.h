@@ -122,7 +122,11 @@ class FloatLayer {
 
     // The redraw events of the grids Neovim draws floats in (the core
     // forwards them; see QNVimCore::redrawEvent() for the events' shape).
-    void floatPositioned(int grid, int anchorGrid, int compindex, int row, int col);
+    void floatPositioned(int grid, int anchorGrid, int compindex, int row, int col,
+                         bool inEditorArea);
+    // Whether the float is one the user's filter accepts (see place()). The
+    // answer can arrive after the win_float_pos that showed the float.
+    void setFloatInEditorArea(int grid, bool inEditorArea);
     void hideFloat(int grid);
     void closeFloat(int grid);
     void destroyGrid(int grid);
@@ -142,9 +146,10 @@ class FloatLayer {
     // Show the visible floats with a size, stacked in Neovim's order. A float
     // anchored to a window is placed in that window's editor view (see
     // WindowAnchor); one anchored to another float follows that float's
-    // overlay; every other float is placed at its cell of the main window.
-    // The cells are drawn with the font of the current editor (Neovim's
-    // screen is its text area).
+    // overlay; a float anchored to the screen whose window the user's filter
+    // accepts is placed in the current editor's view; every other float is
+    // placed at its cell of the main window. The cells are drawn with the font
+    // of the current editor (Neovim's screen is its text area).
     void place(const QList<WindowAnchor> &windowAnchors,
                TextEditor::TextEditorWidget *currentEditor);
 
@@ -161,6 +166,10 @@ class FloatLayer {
         // screen (grid 1) or a window's grid. A float anchored to a window is
         // mapped through the editor view of that window (see place()).
         int anchorGrid = 1;
+        // Whether the float's window is one the user's filter accepts
+        // (qnvim.float_filter()): its screen cells are then cells of the
+        // current editor's view instead of the main window (see place()).
+        bool inEditorArea = false;
         // Top left corner of the float on Neovim's screen, in cells. The
         // screen is grid 1, which qnvim sizes to the whole main window, so
         // these are cells of the main window.

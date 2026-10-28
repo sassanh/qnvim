@@ -233,7 +233,8 @@ void FloatLayer::setHighlight(int id, const QVariantMap &attributes) {
     hl.underline = attributes.value("underline", false).toBool();
 }
 
-void FloatLayer::floatPositioned(int grid, int anchorGrid, int compindex, int row, int col) {
+void FloatLayer::floatPositioned(int grid, int anchorGrid, int compindex, int row, int col,
+                                 bool inEditorArea) {
     FloatState &st = mFloats[grid];
     st.isFloat = true;
     st.visible = true;
@@ -241,6 +242,13 @@ void FloatLayer::floatPositioned(int grid, int anchorGrid, int compindex, int ro
     st.compindex = compindex;
     st.row = row;
     st.col = col;
+    st.inEditorArea = inEditorArea;
+}
+
+void FloatLayer::setFloatInEditorArea(int grid, bool inEditorArea) {
+    auto floatState = mFloats.find(grid);
+    if (floatState != mFloats.end())
+        floatState->inEditorArea = inEditorArea;
 }
 
 void FloatLayer::hideFloat(int grid) {
@@ -477,12 +485,22 @@ void FloatLayer::place(const QList<WindowAnchor> &windowAnchors,
         // through the editor view that shows that window: Neovim's window
         // layout is not Qt Creator's editor layout (the views can be anywhere
         // in the main window), so the window's cell on Neovim's screen is not
-        // where its text is shown. Every other float stays at its screen cell,
-        // which is a cell of the whole main window.
+        // where its text is shown. A float the user's filter accepts is placed
+        // the same way, through the current editor's view (its window): the
+        // filter says its screen cells are cells of the editing area. Every
+        // other float stays at its screen cell, which is a cell of the whole
+        // main window.
         const WindowAnchor *windowAnchor = nullptr;
         if (floatState->anchorGrid != 1) {
             for (const WindowAnchor &anchor : windowAnchors) {
                 if (anchor.grid == floatState->anchorGrid and anchor.editor) {
+                    windowAnchor = &anchor;
+                    break;
+                }
+            }
+        } else if (floatState->inEditorArea) {
+            for (const WindowAnchor &anchor : windowAnchors) {
+                if (anchor.textEditor == currentEditor) {
                     windowAnchor = &anchor;
                     break;
                 }

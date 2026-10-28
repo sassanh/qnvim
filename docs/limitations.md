@@ -28,7 +28,9 @@ menu's scrollbar or its documentation window) follows that float's overlay. A
 float anchored to Neovim's screen is placed at its screen cell, and qnvim's
 screen is the whole main window. A plugin that takes an editor-relative
 position instead of anchoring its float to a window gives qnvim no way to know
-which view it belongs to, so the float stays at its screen cell.
+which view it belongs to, so the float stays at its screen cell unless a
+`qnvim.float_filter()` filter places it in the editing area (see
+[configuration](configuration.md)).
 
 ## Command line and messages handed to plugins
 

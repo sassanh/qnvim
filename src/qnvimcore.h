@@ -217,6 +217,12 @@ class QNVimCore : public QObject {
     // the windows (see FloatLayer::place()).
     QList<FloatLayer::WindowAnchor> windowAnchors() const;
 
+    // Place the float overlays (see FloatLayer::place()).
+    void placeFloats();
+    // Ask the user's float filter (qnvim.float_filter()) about a floating
+    // window, and place the floats again when the answer arrives.
+    void queryFloatFilter(int grid, int win);
+
     bool mEnabled = true;
 
     CmdLine *m_cmdLine = nullptr;
@@ -260,6 +266,14 @@ class QNVimCore : public QObject {
     // the redraw events of the grids that are not windows' grids, and placed
     // once Neovim has flushed a redraw.
     FloatLayer mFloatLayer;
+    // Whether the user registered a float filter (qnvim.float_filter()): only
+    // then are the floats' windows asked about (see queryFloatFilter()).
+    bool mFloatFilterRegistered = false;
+    // The grid of every floating window Neovim reported (win_float_pos).
+    QMap<int, int> mFloatGrids;
+    // The filter's answer for a floating window: whether the float is placed in
+    // the current editor's view (see FloatLayer::setFloatInEditorArea()).
+    QMap<int, bool> mFloatFilters;
 
     // The editor view a Neovim window is being created for: the window that
     // appears for it is tied to that view (instead of being mistaken for a

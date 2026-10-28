@@ -55,6 +55,11 @@ function! QNVimWindowInfo()
     endfor
     return l:windows
 endfunction
+" Whether qnvim places the floating window in the editing area: the filter is a
+" Lua function (qnvim.float_filter()), so qnvim asks it through this wrapper.
+function! QNVimFloatMatches(win)
+    return luaeval("require('qnvim')._matches_float(_A)", a:win)
+endfunction
 " Source the user's qnvim.vim/qnvim.lua: the file matching their Neovim
 " configuration (init.lua -> qnvim.lua), falling back to the other extension.
 function! QNVimSourceRc()
