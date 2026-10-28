@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- A buffer that is shown only in a floating window no longer replaces the current editor or leaves a document behind: `BufEnter` is forwarded to Qt Creator only for normal windows, so floats such as lazygit's `term://...` terminal are not mirrored as Qt Creator documents. Closing the float keeps the previous editor visible, while the float itself is still drawn as an overlay. Telescope and other unnamed scratch floats behave as before.
+
 - The build uses the Qt installation selected with `Qt6_DIR` consistently instead of mixing in a system Qt: neovim-qt's legacy `find_package(QT NAMES Qt6)` and Qt's tool packages no longer fall back to another installation. `CMAKE_PREFIX_PATH` remains the recommended way when several Qt versions are installed.
 
 - Floating windows are placed by the anchor Neovim reports (`win_float_pos`' `anchor_grid`): a float anchored to a window (including one anchored to the cursor in that window) is shown in that window's editor view, at the position it has relative to the window. A float anchored to another float (a completion menu's scrollbar or its documentation window) follows that float's overlay. Floats anchored to the screen stay at their screen cell in the main window (pickers, dashboard, notifications) ([#66](https://github.com/sassanh/qnvim/issues/66)).
