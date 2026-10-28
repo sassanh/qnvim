@@ -7,17 +7,15 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
   # EXCLUDE_FROM_ALL prevents neovimqt from being installed in CI artifacts
   FetchContent_Declare(
     neovimqt
-    GIT_REPOSITORY https://github.com/gikari/neovim-qt.git
-    GIT_TAG c84f81712639140f910a1d38acb8edcb4509dc4d # qt6 branch
-    EXCLUDE_FROM_ALL
-  )
+    GIT_REPOSITORY https://github.com/equalsraf/neovim-qt.git
+    GIT_TAG v0.2.20 # qt6 branch
+    EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(neovimqt)
 else()
   FetchContent_Declare(
     neovimqt
-    GIT_REPOSITORY https://github.com/gikari/neovim-qt.git
-    GIT_TAG c84f81712639140f910a1d38acb8edcb4509dc4d # qt6 branch
-  )
+    GIT_REPOSITORY https://github.com/equalsraf/neovim-qt.git
+    GIT_TAG v0.2.20)
   FetchContent_GetProperties(neovimqt)
   if(NOT neovimqt_POPULATED)
     cmake_policy(SET CMP0169 OLD)
