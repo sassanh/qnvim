@@ -1,4 +1,7 @@
 include(FetchContent)
+# This flag ensures that neovim-qt and msgpack are linked with -fPIC. On some
+# systems this flag is not enbaled by default
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
   # EXCLUDE_FROM_ALL prevents neovimqt from being installed in CI artifacts
