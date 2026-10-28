@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Fixed**
 
+- The build uses the Qt installation selected with `Qt6_DIR` consistently instead of mixing in a system Qt: neovim-qt's legacy `find_package(QT NAMES Qt6)` and Qt's tool packages no longer fall back to another installation. `CMAKE_PREFIX_PATH` remains the recommended way when several Qt versions are installed.
+
 - Floating windows are placed by the anchor Neovim reports (`win_float_pos`' `anchor_grid`): a float anchored to a window (including one anchored to the cursor in that window) is shown in that window's editor view, at the position it has relative to the window. A float anchored to another float (a completion menu's scrollbar or its documentation window) follows that float's overlay. Floats anchored to the screen stay at their screen cell in the main window (pickers, dashboard, notifications) ([#66](https://github.com/sassanh/qnvim/issues/66)).
 
 - The command line is drawn above Qt Creator's status bar instead of behind it: the visible widget is an overlay in the main window, while an invisible placeholder keeps its space in the editor view's layout ([#66](https://github.com/sassanh/qnvim/issues/66)).
