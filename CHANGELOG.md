@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- Search highlighting: the matches of Neovim's last search pattern are shown in the editor with Qt Creator's search result colors while `'hlsearch'` is on, in every split that shows the buffer, and `:nohlsearch` clears them. While a `/` or `?` search is typed with `'incsearch'` and `'hlsearch'` on, the matches follow the text typed so far, and `<Esc>` restores the previous search's matches ([#26](https://github.com/sassanh/qnvim/issues/26)).
+
 - `qnvim.float_filter()`: the floating windows the Lua filter accepts are placed as if Neovim anchored them to the current window (their offset from that window is measured in the editor view instead of from the main window's top left corner), for floats that are drawn in Neovim's screen cells but belong to the text. Without a filter, nothing changes.
 
 **Fixed**

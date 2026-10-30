@@ -49,6 +49,7 @@
 #include <QStringList>
 #include <QStyleHints>
 #include <QTextBlock>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QTextOption>
@@ -132,6 +133,12 @@ QNVimCore::QNVimCore(QObject *parent)
     mWrapSetting = TextEditor::displaySettings().textWrapping();
     connect(&TextEditor::displaySettings(), &TextEditor::DisplaySettings::changed,
             this, &QNVimCore::wrapSettingChanged);
+
+    // Search highlights use Qt Creator's search result colors: follow a change
+    // of the color scheme without waiting for the next search.
+    connect(TextEditor::TextEditorSettings::instance(),
+            &TextEditor::TextEditorSettings::fontSettingsChanged,
+            this, &QNVimCore::applySearchHighlights);
 
     mNumbersColumn = new NumbersColumn();
     // Prevent inheriting parent Neovim's socket when Qt Creator is launched from inside Neovim
@@ -602,6 +609,15 @@ void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
         refreshWindowSizes();
     else
         resizeWindow(win);
+
+    // Show the search matches in the new view as well; a buffer whose matches
+    // were never read (it was not visible before) is searched again.
+    if (searchHighlightsEnabled()) {
+        if (mSearchMatches.contains(st.buffer))
+            applySearchHighlights();
+        else
+            refreshSearchHighlights();
+    }
 }
 
 void QNVimCore::activateWindowEditor(int win) {
@@ -1553,6 +1569,144 @@ void QNVimCore::wrapSettingChanged() {
                                      : QByteArrayLiteral("tabdo windo setlocal nowrap"));
 }
 
+// The buffers the search highlights are computed for: those shown by windows
+// that have an editor. Only the editor area is visible, so searching the
+// buffers of editors in other tabs would cost time for highlights nobody sees.
+QList<int> QNVimCore::visibleBuffers() const {
+    QList<int> buffers;
+    for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
+        const WindowState &st = it.value();
+        if (st.bound and st.editor and st.buffer and !buffers.contains(st.buffer))
+            buffers.append(st.buffer);
+    }
+
+    if (Core::IEditor *editor = Core::EditorManager::currentEditor()) {
+        const int buffer = mBuffers.value(editor);
+        if (buffer and !buffers.contains(buffer))
+            buffers.append(buffer);
+    }
+
+    return buffers;
+}
+
+bool QNVimCore::searchHighlightsEnabled() const {
+    return !mSearchPreviewPattern.isEmpty() or mSearchEnabled;
+}
+
+void QNVimCore::refreshSearchHighlights() {
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    const unsigned long long counter = ++mSearchCounter;
+
+    // Matches from an earlier request are stale now; they are replaced when
+    // the answer arrives, or cleared right away when nothing is highlighted.
+    mSearchMatches.clear();
+
+    if (!searchHighlightsEnabled()) {
+        applySearchHighlights();
+        return;
+    }
+
+    // While a search is typed, the matches are those of the pattern typed so
+    // far; the last committed pattern is only highlighted once the command
+    // line is left.
+    const QString pattern = mSearchPreviewPattern.isEmpty() ? mSearchPattern
+                                                            : mSearchPreviewPattern;
+
+    QVariantList buffers;
+    for (const int buffer : visibleBuffers())
+        buffers.append(buffer);
+
+    if (buffers.isEmpty()) {
+        applySearchHighlights();
+        return;
+    }
+
+    auto request = mNVim->api2()->nvim_call_function(
+        QByteArrayLiteral("QNVimSearchMatches"), {pattern, buffers});
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [=, this](quint32, quint64, const QVariant &error) {
+        if (mSearchCounter != counter)
+            return;
+        qWarning(Main) << "Could not read the search matches from Neovim:" << error;
+        applySearchHighlights();
+    });
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [=, this](quint32, quint64, const QVariant &result) {
+        if (mSearchCounter != counter or !searchHighlightsEnabled())
+            return;
+
+        for (const QVariant &entry : result.toList()) {
+            const QVariantList info = entry.toList();
+            if (info.size() < 2)
+                continue;
+
+            QList<SearchMatch> matches;
+            for (const QVariant &item : info[1].toList()) {
+                const QVariantList position = item.toList();
+                if (position.size() < 3)
+                    continue;
+
+                SearchMatch match;
+                match.line = position[0].toInt();
+                match.startColumn = position[1].toInt();
+                match.endColumn = position[2].toInt();
+                if (match.line > 0 and match.endColumn > match.startColumn)
+                    matches.append(match);
+            }
+            mSearchMatches.insert(info[0].toInt(), matches);
+        }
+
+        applySearchHighlights();
+    });
+}
+
+void QNVimCore::applySearchHighlights() {
+    const QTextCharFormat format = TextEditor::TextEditorSettings::fontSettings()
+                                       .toTextCharFormat(TextEditor::C_SEARCH_RESULT);
+    const Utils::Id kind("QNVim.Search");
+    QSet<int> highlighted;
+
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        Core::IEditor *editor = it.key();
+        auto textEditor = qobject_cast<TextEditor::TextEditorWidget *>(
+            editor ? editor->widget() : nullptr);
+        if (!textEditor)
+            continue;
+
+        QList<QTextEdit::ExtraSelection> selections;
+        if (searchHighlightsEnabled()) {
+            const QString text = textEditor->toPlainText();
+            for (const SearchMatch &match : mSearchMatches.value(it.value())) {
+                const int start = positionFor(text, match.line, match.startColumn);
+                const int end = positionFor(text, match.line, match.endColumn);
+                if (end <= start or start >= text.size())
+                    continue;
+
+                QTextEdit::ExtraSelection selection;
+                selection.format = format;
+                selection.cursor = QTextCursor(textEditor->document());
+                selection.cursor.setPosition(start);
+                selection.cursor.setPosition(end, QTextCursor::KeepAnchor);
+                selections.append(selection);
+            }
+        }
+
+        // Leave the editors without matches alone, unless they still show
+        // selections from before; setting the selections clears the editor's
+        // extra area and repaints it.
+        if (selections.isEmpty() and !mSearchHighlighted.contains(it.value()))
+            continue;
+
+        textEditor->setExtraSelections(kind, selections);
+        if (!selections.isEmpty())
+            highlighted.insert(it.value());
+    }
+
+    mSearchHighlighted = highlighted;
+}
+
 void QNVimCore::syncFromVim() {
     auto editor = Core::EditorManager::currentEditor();
 
@@ -1566,10 +1720,10 @@ void QNVimCore::syncFromVim() {
     unsigned long long syncCounter = ++mSyncCounter;
 
     auto request = mNVim->api2()->nvim_eval(
-        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0'), get(get(getwininfo(win_getid()), 0, {}), 'textoff', -1), virtcol('.'), virtcol('v')]");
+        "[bufnr(''), win_getid(), b:changedtick, mode(1), &modified, getpos('.'), getpos('v'), &number, &relativenumber, &wrap, getpos('w0'), get(get(getwininfo(win_getid()), 0, {}), 'textoff', -1), virtcol('.'), virtcol('v'), getreg('/'), &hlsearch, v:hlsearch, &ignorecase, &smartcase]");
     connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this](quint32, quint64, const QVariant &v) {
         QVariantList state = v.toList();
-        if (state.size() < 14)
+        if (state.size() < 19)
             return;
 
         if (mSyncCounter != syncCounter)
@@ -1592,6 +1746,24 @@ void QNVimCore::syncFromVim() {
         int topline = state[10].toList().value(1).toInt();
         int cursorVirtCol = state[12].toInt();
         int anchorVirtCol = state[13].toInt();
+
+        // The matches of the last search pattern are shown as extra
+        // selections. A new pattern, a changed option that affects matching, or
+        // 'hlsearch' / v:hlsearch turning on or off (e.g. `:nohlsearch`) means
+        // they have to be read from Neovim again.
+        const QString searchPattern = state[14].toString();
+        const bool searchEnabled = state[15].toBool() and state[16].toBool()
+                                   and !searchPattern.isEmpty();
+        const bool ignoreCase = state[17].toBool();
+        const bool smartCase = state[18].toBool();
+        if (searchEnabled != mSearchEnabled or searchPattern != mSearchPattern
+            or ignoreCase != mSearchIgnoreCase or smartCase != mSearchSmartCase) {
+            mSearchEnabled = searchEnabled;
+            mSearchPattern = searchPattern;
+            mSearchIgnoreCase = ignoreCase;
+            mSearchSmartCase = smartCase;
+            refreshSearchHighlights();
+        }
 
         mNumber = state[7].toBool();
         mRelativeNumber = state[8].toBool();
@@ -1730,6 +1902,10 @@ void QNVimCore::syncFromVim() {
                 textEditor->document()->setModified(modified);
 
             syncCursorFromVim(win, pos, vPos, mode, cursorVirtCol, anchorVirtCol);
+
+            // The matches of the search pattern move with the changed text.
+            if (searchHighlightsEnabled())
+                refreshSearchHighlights();
         });
     });
 }
@@ -1864,6 +2040,8 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
         // own editor for the document): they share the Neovim buffer.
         mBuffers[editor] = sharedBuffer;
         setupEditor(editor);
+        // The matches of the buffer are known already: show them here too.
+        applySearchHighlights();
     } else if (mSettingBufferFromVim > 0 and mNVim and mNVim->isReady()) {
         // The editor is created from a Neovim autocommand for a known buffer.
         mBuffers[editor] = mSettingBufferFromVim;
@@ -1907,6 +2085,9 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
                     mPendingPush.insert(buffer);
                     initializeBuffer(buffer);
                     attachEditorToWindow(editor);
+                    // The buffer was opened before and its matches may be
+                    // cached (and stale if it changed since).
+                    applySearchHighlights();
                 });
             });
         });
@@ -1981,6 +2162,9 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
         mChangedTicks.remove(bufferNumber);
         mBufferType.remove(bufferNumber);
         mPendingPush.remove(bufferNumber);
+        // Neovim may reuse the buffer number for another buffer; its matches
+        // must not be shown for that one.
+        mSearchMatches.remove(bufferNumber);
     }
 
     if (win and !vimInitiated and view) {
@@ -2088,6 +2272,15 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
         if (method == "triggerCommand") {
             for (const auto& methodArg : methodArgs)
                 triggerCommand(methodArg.toByteArray());
+        } else if (method == "searchPreview") {
+            // The user is typing a / or ? search (the preamble sends the
+            // pattern typed so far): highlight its matches instead of the last
+            // committed pattern, until the command line is left.
+            const QString pattern = methodArgs.value(0).toString();
+            if (pattern != mSearchPreviewPattern) {
+                mSearchPreviewPattern = pattern;
+                refreshSearchHighlights();
+            }
         } else if (method == "floatFilter") {
             // The user registered (or removed) a float filter
             // (qnvim.float_filter()): ask it about the floating windows Neovim

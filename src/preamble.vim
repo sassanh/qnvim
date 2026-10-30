@@ -1,7 +1,9 @@
 " qnvim's own Neovim setup (see QNVimCore::sendPreamble(), which sends this
 " file as one multi-line `:command` through nvim_command). In that form a bare
 " `autocmd ...` line absorbs the lines that follow it, so every autocmd must
-" stay wrapped in `execute "autocmd ..."`. The caller sets g:neovim_channel.
+" stay wrapped in `execute "autocmd ..."`. A leading `\` is not joined to the
+" line before it either: it stays in the function body and fails when the
+" function is called. The caller sets g:neovim_channel.
 let g:QNVIM_always_text=v:true
 execute "command -bar Build call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')"
 execute "command -bar BuildProject call rpcnotify(g:neovim_channel, 'Gui', 'triggerCommand', 'ProjectExplorer.Build')"
@@ -45,6 +47,104 @@ endfunction
 execute "autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), winbufnr(win_getid()))"
 execute "autocmd WinEnter * call QNVimWinEvent('WinEnter', win_getid(), winbufnr(win_getid()))"
 execute "autocmd WinClosed * call QNVimWinEvent('WinClosed', str2nr(expand('<amatch>')), 0)"
+" Whether a search pattern is matched case-sensitively because of 'smartcase':
+" an upper case character in the pattern (not one that is part of an escape
+" such as \V or \W) makes a search case-sensitive while 'ignorecase' is on.
+function! QNVimPatternHasUpper(pattern)
+    let l:chars = split(a:pattern, '\zs')
+    let l:i = 0
+    while l:i < len(l:chars)
+        let l:char = l:chars[l:i]
+        if l:char ==# '\'
+            let l:i += 2
+            continue
+        endif
+        if l:char =~# '[[:upper:]]'
+            return 1
+        endif
+        let l:i += 1
+    endwhile
+    return 0
+endfunction
+" The matches of {pattern} in each of the loaded buffers {buffers}, as
+" [buffer, [[line, start column, end column], ...]] entries. Lines are 1-based
+" and columns are 1-based UTF-8 byte columns, the end column being exclusive.
+" At most 1000 matches are collected per buffer, so that a pattern that matches
+" everywhere in a big buffer does not make the answer huge.
+function! QNVimSearchMatches(pattern, buffers)
+    let l:result = []
+    if empty(a:pattern) || !exists('*matchbufline')
+        return l:result
+    endif
+
+    " matchbufline() computes its matches like a search, except that it does
+    " not apply 'smartcase'. Prefixing the pattern with \C makes the matches
+    " case-sensitive, like the search it comes from; a \c in the pattern comes
+    " later and still overrides it.
+    let l:pattern = a:pattern
+    if &ignorecase && &smartcase && QNVimPatternHasUpper(l:pattern)
+        let l:pattern = '\C' . l:pattern
+    endif
+    try
+        for l:buffer in a:buffers
+            if !bufexists(l:buffer) || !bufloaded(l:buffer)
+                continue
+            endif
+            let l:linecount = getbufinfo(l:buffer)[0].linecount
+            let l:matches = []
+            let l:first = 1
+            " Search in chunks, so the scan stops soon after the 1000th match
+            " instead of walking the rest of a huge buffer.
+            while l:first <= l:linecount && len(l:matches) < 1000
+                let l:last = min([l:first + 499, l:linecount])
+                for l:match in matchbufline(l:buffer, l:pattern, l:first, l:last)
+                    if len(l:matches) >= 1000
+                        break
+                    endif
+                    call add(l:matches, [l:match.lnum, l:match.byteidx + 1, l:match.byteidx + strlen(l:match.text) + 1])
+                endfor
+                let l:first = l:last + 1
+            endwhile
+            call add(l:result, [l:buffer, l:matches])
+        endfor
+    catch
+        " A pattern that is not valid (yet) matches nothing.
+    endtry
+    return l:result
+endfunction
+" The search pattern being typed in the / or ? command line {line}: the text
+" before a trailing search offset, when that is what the text after the last
+" unescaped delimiter looks like. An offset such as /foo/e or /foo/+2 decides
+" where the cursor lands, not which text matches, so it is left out.
+function! QNVimCmdlinePattern(type, line)
+    let l:delimiter = a:type ==# '?' ? '?' : '/'
+    let l:last = -1
+    let l:escaped = 0
+    let l:i = 0
+    while l:i < len(a:line)
+        let l:char = a:line[l:i]
+        if l:escaped
+            let l:escaped = 0
+        elseif l:char ==# '\'
+            let l:escaped = 1
+        elseif l:char ==# l:delimiter
+            let l:last = l:i
+        endif
+        let l:i += 1
+    endwhile
+    if l:last < 0
+        return a:line
+    endif
+    let l:offset = strpart(a:line, l:last + 1)
+    if l:offset !~# '^\%([esb][+-]\?\d*\|[+-]\?\d*\|;.*\)\?$'
+        return a:line
+    endif
+    return strpart(a:line, 0, l:last)
+endfunction
+" While a / or ? search is typed, report its pattern so that its matches can be
+" highlighted along with 'incsearch' and 'hlsearch'.
+execute "autocmd CmdlineChanged [/?] call rpcnotify(g:neovim_channel, 'Gui', 'searchPreview', (&incsearch && &hlsearch) ? QNVimCmdlinePattern(getcmdtype(), getcmdline()) : '')"
+execute "autocmd CmdlineLeave [/?] call rpcnotify(g:neovim_channel, 'Gui', 'searchPreview', '')"
 function! QNVimWindowInfo()
     let l:windows = []
     for l:info in getwininfo()

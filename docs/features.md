@@ -69,6 +69,18 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
 - The command line, messages and completion menu can be handed over to Neovim
   plugins such as noice.nvim; see [Configuration](configuration.md).
 
+## Search highlighting
+
+- The matches of Neovim's last search pattern (`/`, `?`, `*`, `#`, ...) are
+  highlighted in the editor with Qt Creator's search result colors, in every
+  split that shows the buffer.
+- While a `/` or `?` search is being typed, with `'incsearch'` and `'hlsearch'`
+  both on, the matches of the text typed so far are highlighted and follow each
+  keystroke; `<Esc>` brings back the last search's matches.
+- `:nohlsearch` (and `'hlsearch'` being off) clears the highlights; the next
+  search brings them back.
+- Up to 1000 matches are highlighted per buffer.
+
 ## Viewport and scrolling
 
 Commands that scroll Neovim's window without moving the cursor (`zz`, `zt`,

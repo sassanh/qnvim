@@ -10,6 +10,7 @@
 #include <QPoint>
 #include <QPointer>
 #include <QSet>
+#include <QString>
 
 namespace Core {
 class IEditor;
@@ -201,6 +202,21 @@ class QNVimCore : public QObject {
     // selection in sync with Neovim.
     void setupEditor(Core::IEditor *);
 
+    // Neovim -> Qt Creator: ask Neovim for the matches of the current search
+    // pattern in the visible buffers, then show them in their editors (see
+    // applySearchHighlights()).
+    void refreshSearchHighlights();
+    // Whether search matches are to be shown: a search is being typed, or
+    // 'hlsearch' and v:hlsearch are on and there is a pattern.
+    bool searchHighlightsEnabled() const;
+    // Show the search matches of each editor's buffer as extra selections, with
+    // the colors Qt Creator uses for its own search results, or clear them when
+    // there is nothing to highlight.
+    void applySearchHighlights();
+    // The buffers shown by the windows that have an editor; search highlights
+    // are only computed for those.
+    QList<int> visibleBuffers() const;
+
     // Deferred work on Neovim's window autocommands: a window that is still new
     // once the command that created it was fully processed is a split.
     void reconcileWindows();
@@ -240,6 +256,35 @@ class QNVimCore : public QObject {
     // Whether files opened by Neovim are restricted to Qt Creator text editors
     // (see g:QNVIM_always_text).
     bool mAlwaysText = true;
+
+    // A match of the last search pattern, as QNVimSearchMatches (see
+    // src/preamble.vim) reports it: a 1-based line and UTF-8 byte columns
+    // (the end column is exclusive).
+    struct SearchMatch {
+        int line = 0;
+        int startColumn = 0;
+        int endColumn = 0;
+    };
+    // The matches computed for each buffer, and what they were computed for;
+    // a change in any of these asks Neovim for the matches again.
+    QMap<int, QList<SearchMatch>> mSearchMatches;
+    QString mSearchPattern;
+    // The pattern being typed in a / or ? command line while 'incsearch' and
+    // 'hlsearch' preview it; empty when no search is being typed, so that
+    // mSearchPattern is used.
+    QString mSearchPreviewPattern;
+    // Whether the matches are to be shown at all: 'hlsearch' and v:hlsearch
+    // are on and there is a pattern. ('hlsearch' can be off while a pattern
+    // from an earlier search is still remembered.)
+    bool mSearchEnabled = false;
+    bool mSearchIgnoreCase = false;
+    bool mSearchSmartCase = false;
+    // The buffers whose editors were given search selections, so that clearing
+    // or refreshing them does not touch every open editor (each keystroke
+    // refreshes the matches, and there can be many files open).
+    QSet<int> mSearchHighlighted;
+    // Bumped for every request; answers to an older request are dropped.
+    unsigned long long mSearchCounter = 0;
 
     // Neovim windows and the Qt Creator editor views that represent them.
     QMap<int, WindowState> mWindows;

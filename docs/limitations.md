@@ -45,3 +45,15 @@ and highlight groups. By default, files opened from Neovim use Qt Creator's text
 editor for their type, so they are highlighted like files opened in Qt Creator;
 types with no Qt Creator text editor open as plain text. Floating windows use
 Neovim's colors and attributes.
+
+## Search highlighting
+
+`'hlsearch'` matches are highlighted (see
+[Features](features.md#search-highlighting)), but the other highlights Neovim
+draws in a window are not: in particular, highlights added by plugins with
+`matchadd()`/`matchaddpos()` (for example vim-sandwich's operator target) do not
+appear. A search pattern that matches across lines is not highlighted either,
+and at most 1000 matches are shown per buffer. While a `/` or `?` pattern is
+being typed, all its matches are highlighted only when both `'incsearch'` and
+`'hlsearch'` are on; with `'hlsearch'` off, the single match `'incsearch'`
+highlights is not shown (the cursor still moves to it like in Neovim).
