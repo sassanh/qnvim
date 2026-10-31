@@ -112,9 +112,13 @@ class QNVimCore : public QObject {
     struct WindowState {
         // The editor current in the view (null, e.g. while the view is empty).
         QPointer<Core::IEditor> editor;
-        // The editor view widget (the editor's grandparent widget, see
-        // editorViewWidget()).
+        // The view the window is represented by, and the connection that
+        // notices the view being destroyed (Qt Creator removed the split): the
+        // window is closed then. `viewGeneration` tells a view that was
+        // rebound from one that was destroyed.
         QPointer<QWidget> view;
+        QMetaObject::Connection viewDestroyed;
+        int viewGeneration = 0;
         // Whether a view was ever bound to the window. A window without a view
         // either never had one, or its view was destroyed in Qt Creator (a null
         // view with `bound` set).
@@ -173,8 +177,18 @@ class QNVimCore : public QObject {
     int windowWithoutView(int buffer) const;
     Core::IEditor *editorWithoutWindow(int buffer) const;
 
-    // Tie a Neovim window to the editor its view shows.
+    // Tie a Neovim window to the editor view that represents it, and to the
+    // editor current in it.
     void bindWindow(int, Core::IEditor *);
+    // Tie a Neovim window to an editor view before it shows an editor (the
+    // view exists, its editor is still being opened). The editor is picked up
+    // when it becomes current in the view. Returns whether the view was free.
+    bool bindWindowToView(int, QWidget *);
+    // Watch `view` for destruction: the window it represents is closed then.
+    void watchView(int, QWidget *);
+    // Drop the view of a window without closing it (the view is already gone
+    // or no longer represents the window).
+    void unbindWindow(int);
     // Qt Creator -> Neovim: show an editor in the window that represents it.
     void attachEditorToWindow(Core::IEditor *);
     // Neovim -> Qt Creator: show a window's editor in its view.
@@ -186,7 +200,11 @@ class QNVimCore : public QObject {
     void updateWindowBuffer(int win, int buffer, const QString &filename,
                             const QString &bufferType, bool alwaysText);
     // Qt Creator -> Neovim: create a split (a window) for an editor view.
-    void ensureWindowForView(Core::IEditor *);
+    // `sourceWin` (0 for "whatever is current") and `split` ("left", "right",
+    // "above", "below") say where; empty `split` picks the orientation from
+    // Qt Creator's layout.
+    void ensureWindowForView(Core::IEditor *, int sourceWin = 0,
+                             const QByteArray &split = QByteArray());
     // Neovim -> Qt Creator: create a split for a window, showing its buffer.
     // The window is split off from `sourceWin` (0 for "whatever is current").
     // `sideBySide` is the orientation of the split, `before` tells whether the
@@ -220,8 +238,6 @@ class QNVimCore : public QObject {
     // Deferred work on Neovim's window autocommands: a window that is still new
     // once the command that created it was fully processed is a split.
     void reconcileWindows();
-    // Close Neovim windows whose editor views were removed in Qt Creator.
-    void closeWindowsForRemovedViews();
 
     // Whether the grid is one of the windows' grids, which draw documents that
     // Qt Creator shows itself: their redraw events are not forwarded to the
@@ -320,10 +336,10 @@ class QNVimCore : public QObject {
     // the current editor's view (see FloatLayer::setFloatInEditorArea()).
     QMap<int, bool> mFloatFilters;
 
-    // The editor view a Neovim window is being created for: the window that
-    // appears for it is tied to that view (instead of being mistaken for a
-    // window that still needs one).
-    QPointer<QWidget> mCreatingWindowForView;
+    // The editor views a Neovim window is being created for (see
+    // ensureWindowForView()): reconciliation waits for them, so a window that
+    // is on its way is not mistaken for one that still needs a view.
+    QSet<QWidget *> mPendingWindowViews;
     // True while Qt Creator is being made to represent a Neovim window (Neovim
     // must not be told about the editors Qt Creator activates on the way).
     bool mInhibitWindowSync = false;

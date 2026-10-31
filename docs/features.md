@@ -38,6 +38,9 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
 - Closing a Neovim window removes its Qt Creator split. Closing a split, or the
   last editor in it, closes its Neovim window. Neovim's last window is left
   open, since Neovim cannot close it.
+- A split created on either side is never dropped by synchronization: it gets
+  its counterpart on the other side. A split only disappears when it is closed
+  in Neovim or in Qt Creator.
 
 ## Floating windows
 

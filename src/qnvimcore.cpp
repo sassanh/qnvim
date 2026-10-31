@@ -123,6 +123,10 @@ QNVimCore::QNVimCore(QObject *parent)
             this, &QNVimCore::editorAboutToClose);
     connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
             this, &QNVimCore::editorOpened);
+    // An editor opened in a split that is not made current (e.g. "Open in
+    // Other Split") still needs a window for its view.
+    connect(Core::EditorManager::instance(), &Core::EditorManager::editorOpened,
+            this, &QNVimCore::editorOpened);
 
     // Neovim's 'wrap' option and Qt Creator's "Enable text wrapping" setting
     // are kept in sync, so that both describe the same editors. Neovim's own
@@ -210,6 +214,8 @@ QNVimCore::~QNVimCore()
     disconnect(Core::EditorManager::instance(), &Core::EditorManager::editorAboutToClose,
                this, &QNVimCore::editorAboutToClose);
     disconnect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
+               this, &QNVimCore::editorOpened);
+    disconnect(Core::EditorManager::instance(), &Core::EditorManager::editorOpened,
                this, &QNVimCore::editorOpened);
     const auto keys = mEditors.keys();
     for (const auto key : keys) {
@@ -564,7 +570,7 @@ int QNVimCore::windowWithoutView(int buffer) const {
 
     for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
         const WindowState &st = it.value();
-        if (!st.bound and st.buffer == buffer)
+        if (!st.bound and st.buffer == buffer and !mClosingWindows.contains(it.key()))
             return it.key();
     }
 
@@ -592,15 +598,17 @@ void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
     if (!win or !editor)
         return;
 
+    QWidget *view = editorViewWidget(editor);
+    if (!view)
+        return;
+
+    if (!bindWindowToView(win, view))
+        return;
+
     WindowState &st = mWindows[win];
-    st.bound = true;
     st.editor = editor;
-    st.view = editorViewWidget(editor);
     if (const int buffer = bufferForEditor(editor))
         st.buffer = buffer;
-    st.cursorLine = st.cursorCol = st.vCursorLine = st.vCursorCol = 0;
-    st.topline = st.pendingTopline = 0;
-    mNewWindows.remove(win);
 
     // The view the window is represented by decides how wide the window's text
     // is; a window not seen by qnvim before has to be asked Neovim for its
@@ -618,6 +626,73 @@ void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
         else
             refreshSearchHighlights();
     }
+}
+
+bool QNVimCore::bindWindowToView(int win, QWidget *view) {
+    if (!win or !view or mClosingWindows.contains(win))
+        return false;
+
+    const int existing = windowForView(view);
+    if (existing and existing != win)
+        return false; // the view represents another window already
+
+    WindowState &st = mWindows[win];
+    st.bound = true;
+    st.view = view;
+    st.editor = editorForView(view);
+    st.cursorLine = st.cursorCol = st.vCursorLine = st.vCursorCol = 0;
+    st.topline = st.pendingTopline = 0;
+    mNewWindows.remove(win);
+
+    watchView(win, view);
+    return true;
+}
+
+void QNVimCore::watchView(int win, QWidget *view) {
+    if (!win or !view)
+        return;
+
+    WindowState &st = mWindows[win];
+    if (st.viewDestroyed)
+        QObject::disconnect(st.viewDestroyed);
+
+    ++st.viewGeneration;
+    const int generation = st.viewGeneration;
+    st.viewDestroyed = QObject::connect(view, &QObject::destroyed, this, [this, win, generation]() {
+        auto it = mWindows.find(win);
+        if (it == mWindows.end())
+            return;
+
+        WindowState &state = it.value();
+        if (state.viewGeneration != generation)
+            return; // the window represents another view now
+
+        // Qt Creator removed the split: the window has nothing left to
+        // represent. Its Neovim window is closed; the buffers shown in it are
+        // kept (only the window goes away).
+        state.viewDestroyed = QMetaObject::Connection();
+        state.view = nullptr;
+        state.editor = nullptr;
+        state.bound = false;
+        if (mWindows.size() <= 1)
+            return; // Neovim cannot close its last window
+        closeWindowForView(win);
+    });
+}
+
+void QNVimCore::unbindWindow(int win) {
+    auto it = mWindows.find(win);
+    if (it == mWindows.end())
+        return;
+
+    WindowState &st = it.value();
+    if (st.viewDestroyed)
+        QObject::disconnect(st.viewDestroyed);
+    st.viewDestroyed = QMetaObject::Connection();
+    ++st.viewGeneration;
+    st.view = nullptr;
+    st.editor = nullptr;
+    st.bound = false;
 }
 
 void QNVimCore::activateWindowEditor(int win) {
@@ -653,7 +728,15 @@ void QNVimCore::syncWindow(int win, Core::IEditor *editor) {
     WindowState &st = *it;
     const bool bufferChanged = (st.buffer != buffer);
     st.editor = editor;
-    st.view = editorViewWidget(editor);
+    QWidget *view = editorViewWidget(editor);
+    if (!view) {
+        unbindWindow(win);
+        return;
+    }
+    if (view != st.view) {
+        st.view = view;
+        watchView(win, view);
+    }
     st.buffer = buffer;
 
     if (bufferChanged) {
@@ -712,7 +795,8 @@ void QNVimCore::updateWindowBuffer(int win, int buffer, const QString &filename,
         syncWindow(win, editor);
 }
 
-void QNVimCore::ensureWindowForView(Core::IEditor *editor) {
+void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
+                                    const QByteArray &split) {
     if (!mNVim or !mNVim->isReady() or mInhibitWindowSync)
         return;
 
@@ -723,7 +807,7 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor) {
     if (!view or windowForView(view))
         return;
 
-    if (mCreatingWindowForView == view)
+    if (mPendingWindowViews.contains(view))
         return; // the window is already being created for this view
 
     const int buffer = bufferForEditor(editor);
@@ -734,33 +818,53 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor) {
         return;
     }
 
-    mCreatingWindowForView = view;
+    mPendingWindowViews.insert(view);
 
-    // The orientation of the nearest splitter says where the view is in Qt
-    // Creator: a view side by side with the others gets a window next to the
-    // current one, a stacked view one below it.
-    QByteArray split = "below";
-    for (QWidget *widget = view; widget; widget = widget->parentWidget()) {
-        if (auto splitter = qobject_cast<QSplitter *>(widget)) {
-            if (splitter->orientation() == Qt::Horizontal)
-                split = "right";
-            break;
+    const int source = sourceWin ? sourceWin : mCurrentWindow;
+    QByteArray direction = split;
+    if (direction.isEmpty()) {
+        // The orientation of the nearest splitter says where the view is in Qt
+        // Creator: a view side by side with the others gets a window next to
+        // the current one, a stacked view one below it.
+        direction = "below";
+        for (QWidget *widget = view; widget; widget = widget->parentWidget()) {
+            if (auto splitter = qobject_cast<QSplitter *>(widget)) {
+                if (splitter->orientation() == Qt::Horizontal)
+                    direction = "right";
+                break;
+            }
         }
     }
 
     QVariantMap config;
-    config.insert("split", split);
-    if (mCurrentWindow)
-        config.insert("win", mCurrentWindow);
+    config.insert("split", direction);
+    if (source)
+        config.insert("win", source);
+
+    const QPointer<QWidget> viewGuard(view);
+    // The view may be destroyed while the request is in flight; it must not
+    // stay in the pending set then.
+    const QMetaObject::Connection viewGone = QObject::connect(
+        view, &QObject::destroyed, this, [this, view]() { mPendingWindowViews.remove(view); });
+    auto requestDone = [this, view, viewGone]() {
+        mPendingWindowViews.remove(view);
+        QObject::disconnect(viewGone);
+    };
 
     auto request = mNVim->api6()->nvim_open_win(buffer, true, config);
     connect(request, &NeovimQt::MsgpackRequest::finished, this,
             [=, this](quint32, quint64, const QVariant &result) {
-        mCreatingWindowForView = nullptr;
+        requestDone();
+
+        if (!mNVim or !mNVim->isReady())
+            return;
 
         const int win = result.toInt();
         if (!win)
             return;
+
+        if (!mWindows.contains(win))
+            mWindows[win].buffer = buffer;
 
         auto it = mWindows.find(win);
         if (it != mWindows.end() and it.value().bound)
@@ -768,21 +872,30 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor) {
 
         // The editor the view shows now is the one the window represents; the
         // editor the window was created for may be gone by now.
-        Core::IEditor *windowEditor = editorForView(view);
-        if (!windowEditor and mBuffers.contains(editor))
-            windowEditor = editor;
-        if (!windowEditor) {
-            mWindowsDirty = true;
-            return;
+        Core::IEditor *windowEditor = editorForView(viewGuard);
+        if (windowEditor) {
+            bindWindow(win, windowEditor);
+            syncCursorToVim(windowEditor);
+        } else if (viewGuard) {
+            // The view exists but shows no editor (yet): pair it with the
+            // window anyway, so that the window is not mistaken for one that
+            // still needs a view. The editor is picked up when it appears.
+            bindWindowToView(win, viewGuard);
+        } else {
+            // The view was destroyed while the window was being created: the
+            // window has no counterpart anymore.
+            closeWindowForView(win);
         }
 
-        bindWindow(win, windowEditor);
-        syncCursorToVim(windowEditor);
+        // The window that was on its way may have kept reconciliation from
+        // running; do it now that it is paired.
+        if (mWindowsDirty)
+            reconcileWindows();
     });
     connect(request, &NeovimQt::MsgpackRequest::error, this,
             [=, this](quint32, quint64, const QVariant &error) {
+        requestDone();
         qWarning(Main) << "Could not open a window in Neovim:" << error;
-        mCreatingWindowForView = nullptr;
     });
 }
 
@@ -816,6 +929,10 @@ void QNVimCore::createViewForWindow(int win, int buffer, const QString &filename
     else
         Core::EditorManager::split();
 
+    // The view the split created is the window's counterpart, even when the
+    // editor for the window's buffer is not available yet.
+    QWidget *newView = editorViewWidget(Core::EditorManager::currentEditor());
+
     // The split duplicated the editor of the source window into the new view.
     // That duplicate is the editor of the new window as long as it shows its
     // buffer. Opening the buffer instead would activate an editor from another
@@ -834,18 +951,26 @@ void QNVimCore::createViewForWindow(int win, int buffer, const QString &filename
         // Neovim placed the new window before the source window, but Qt
         // Creator only splits after it: the two views are the right pair, so
         // the windows are swapped between them.
+        unbindWindow(win);
+        unbindWindow(sourceWin);
         bindWindow(win, sourceEditor);
         bindWindow(sourceWin, editor);
         // Neovim works in the new window; show its (left/top) view.
         activateWindowEditor(win);
-    } else if (editor and mWindows.contains(win) and !mWindows[win].bound) {
+    } else if (editor and mWindows.contains(win) and !mWindows[win].bound
+               and editorViewWidget(editor) == newView) {
         bindWindow(win, editor);
+    } else if (newView and !windowForView(newView) and mWindows.contains(win)
+               and !mWindows[win].bound) {
+        // The view exists but does not show an editor for the buffer (yet);
+        // pair it with the window anyway, so that the window is not mistaken
+        // for one that still needs a view.
+        bindWindowToView(win, newView);
     }
 
     // If no editor could be created for the buffer (e.g. no editor factory
-    // accepts the file), the window stays without a view; it is paired with
-    // one once an editor that shows its buffer is opened. Retrying the view
-    // creation would only add empty splits.
+    // accepts the file), the window keeps the view of the split; the editor is
+    // picked up when it appears in it.
     mNewWindows.remove(win);
 }
 
@@ -898,7 +1023,7 @@ void QNVimCore::closeWindowForView(int win) {
     if (!mNVim or !mNVim->isReady())
         return;
 
-    if (!mWindows.contains(win))
+    if (!mWindows.contains(win) or mClosingWindows.contains(win))
         return;
 
     // Neovim is told to close the window; no Qt Creator split must be removed
@@ -918,9 +1043,7 @@ void QNVimCore::closeWindowForView(int win) {
         // The window still exists (Neovim cannot close its last one): it no
         // longer represents the view the close was requested for, but it may
         // be paired with a view again.
-        it.value().bound = false;
-        it.value().editor = nullptr;
-        it.value().view = nullptr;
+        unbindWindow(win);
     });
 }
 
@@ -962,28 +1085,16 @@ void QNVimCore::setupEditor(Core::IEditor *editor) {
             this, &QNVimCore::updateCursorSize);
 }
 
-void QNVimCore::closeWindowsForRemovedViews() {
-    if (!mNVim or !mNVim->isReady())
-        return;
-
-    // A window whose editor view is gone (the user removed the split in
-    // Qt Creator) has no counterpart anymore. Neovim cannot close its last
-    // window, so the last one is left alone.
-    if (mWindows.size() <= 1)
-        return;
-
-    for (auto it = mWindows.cbegin(); it != mWindows.cend(); ++it) {
-        const WindowState &st = it.value();
-        if (!st.bound or st.view or mClosingWindows.contains(it.key()))
-            continue;
-
-        closeWindowForView(it.key());
-    }
-}
-
 void QNVimCore::reconcileWindows() {
     if (!mWindowsDirty or !mNVim or !mNVim->isReady())
         return;
+
+    if (mCreatingViewForWindow or !mPendingWindowViews.isEmpty()) {
+        // A counterpart is being created: reconciling now would see the
+        // window or view that is on its way as missing and create a duplicate.
+        mWindowsDirty = true;
+        return;
+    }
 
     // Do not ask again while the request is in flight; if it fails, the
     // windows are reconciled on the next redraw flush.
@@ -1039,7 +1150,8 @@ void QNVimCore::reconcileWindows() {
                 continue;
 
             auto it = mWindows.find(window.win);
-            if (it == mWindows.end() or it.value().bound)
+            if (it == mWindows.end() or it.value().bound
+                or mClosingWindows.contains(window.win))
                 continue;
 
             if (Core::IEditor *editor = editorWithoutWindow(window.buffer)) {
@@ -1167,7 +1279,7 @@ void QNVimCore::attachEditorToWindow(Core::IEditor *editor) {
         return;
     }
 
-    if (mCreatingWindowForView == view)
+    if (mPendingWindowViews.contains(view))
         return; // the window is already being created for this view
 
     if (!mNVim or !mNVim->isReady())
@@ -2321,9 +2433,7 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 // was entered) can be sized to its view now.
                 resizeWindow(win);
             } else if (event == "WinClosed") {
-                if (mClosingWindows.remove(win))
-                    return; // qnvim closed the window (its editor view is gone)
-
+                const bool qnvimClosed = mClosingWindows.remove(win);
                 mNewWindows.remove(win);
                 auto windowState = mWindows.find(win);
                 if (windowState == mWindows.end())
@@ -2332,10 +2442,11 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 const WindowState st = *windowState;
                 const bool current = (mCurrentWindow == win);
                 // The window has a view that Qt Creator must remove as well; a
-                // view the editor was moved out of is left alone.
-                const bool viewRemoved = st.view and st.editor
-                                         and editorViewWidget(st.editor) == st.view
+                // view the editor was moved out of is left alone. qnvim closes
+                // a window only when its view is already gone.
+                const bool viewRemoved = !qnvimClosed and st.view
                                          and windowForView(st.view) == win;
+                QObject::disconnect(st.viewDestroyed);
                 mWindows.erase(windowState);
                 if (current)
                     mCurrentWindow = 0; // the WinEnter of the new current window follows
@@ -2343,16 +2454,39 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 if (!viewRemoved)
                     return;
 
+                // The view may show another editor than the one the window was
+                // bound to; activating the one it shows now makes the view the
+                // current one, which is what RemoveCurrentSplit acts on.
+                Core::IEditor *viewEditor = editorForView(st.view);
+                Core::Command *removeSplit = Core::ActionManager::command(
+                    Utils::Id::fromName(QByteArrayLiteral("QtCreator.RemoveCurrentSplit")));
+                // The command's own action is a proxy whose enabled state follows
+                // the current context; the action bound to the editor context is
+                // the one EditorManager keeps in sync with the split layout.
+                QAction *removeSplitAction = removeSplit
+                    ? removeSplit->actionForContext(
+                          Utils::Id::fromName(QByteArrayLiteral("Core.EditorManager")))
+                    : nullptr;
+                if (!viewEditor or !removeSplitAction)
+                    return;
+
                 // The editors in the view are closed as part of the removal;
                 // their buffers are kept (Neovim closed a window, not a buffer).
-                Core::EditorManager::activateEditor(st.editor);
+                // The flags are set before activation, so that the editor
+                // becoming current does not create a new Neovim window for a
+                // view that is about to be removed.
                 const bool removingView = mRemovingView;
                 const bool vimInitiatedClose = mVimInitiatedClose;
                 const bool inhibited = mInhibitWindowSync;
                 mRemovingView = true;
                 mVimInitiatedClose = true;
                 mInhibitWindowSync = true;
-                triggerCommand(QByteArrayLiteral("QtCreator.RemoveCurrentSplit"));
+
+                // activateEditor() updates the action states synchronously.
+                Core::EditorManager::activateEditor(viewEditor);
+                if (removeSplitAction->isEnabled())
+                    removeSplitAction->trigger();
+
                 mInhibitWindowSync = inhibited;
                 mRemovingView = removingView;
                 mVimInitiatedClose = vimInitiatedClose;
@@ -2482,7 +2616,6 @@ void QNVimCore::redraw(const QVariantList &args) {
     if (flush) {
         // Neovim has fully processed the command that caused this redraw: the
         // windows and the editor views can be reconciled.
-        closeWindowsForRemovedViews();
         reconcileWindows();
 
         // The float overlays may have to move: they are placed relative to the
