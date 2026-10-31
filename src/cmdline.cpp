@@ -261,7 +261,7 @@ CmdLineWidget::CmdLineWidget(QNVimCore *core, QWidget *editorView, QWidget *over
     auto editorFont = TextEditor::TextEditorSettings::instance()->fontSettings().font();
     m_pTextWidget->setFont(editorFont);
 
-    auto textEditEventFilter = new TextEditEventFilter(core->nvimConnector(), this);
+    auto textEditEventFilter = new TextEditEventFilter(core, this);
     m_pTextWidget->installEventFilter(textEditEventFilter);
 
     connect(m_pTextWidget->document()->documentLayout(),

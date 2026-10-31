@@ -23,6 +23,8 @@ around it.
   dashboards are shown as overlays with Neovim's text, colors and stacking.
 - **Command line and messages.** Neovim's command line lives in the editor view,
   and long or multiline messages are shown in full.
+- **Restart and quit.** `:restart` reconnects and restores your buffers and
+  splits; quitting Neovim quits Qt Creator through its normal prompts.
 - **IDE integration.** Use `:Build`, `:Run` and friends, or trigger a registered
   Qt Creator command by id.
 - **Neovim's view behavior.** Line numbers, wrapping and scrolling follow

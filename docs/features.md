@@ -10,6 +10,23 @@ navigation and the rest of Qt Creator.
 qnvim spawns the `nvim` executable found in `PATH` and runs your
 `init.vim`/`init.lua`, plugins and key mappings. Neovim is not emulated.
 
+## Restarting and quitting Neovim
+
+- `:restart` reconnects qnvim to the server Neovim starts. The old server is
+  used until it exits; if it does not (for example when `:restart confirm qall`
+  is cancelled, or when modified buffers make its `qall` fail with `E37`),
+  nothing changes and qnvim keeps working. Once the new server has restored its
+  session, Qt Creator's editors are mapped to its buffers by file name and the
+  restored windows are bound to their views again. Editor content, including
+  unsaved changes, is pushed into the new buffers, and `qnvim.vim`/`qnvim.lua`
+  is sourced again. Use `:restart +qall!` to restart and discard unsaved
+  changes.
+- A clean quit (`:q`, `:qa`, `:wq`, ...) closes Qt Creator through its normal
+  Exit flow: unsaved documents are prompted for, and the quit can be cancelled.
+- If reconnecting after a restart fails, or the restarted Neovim cannot restore
+  its session, Qt Creator's Exit flow runs as well, instead of leaving qnvim
+  attached to a server that is gone.
+
 ## Buffers and synchronization
 
 - Buffer contents, cursor position and modified state are kept in sync between

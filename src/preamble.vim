@@ -44,7 +44,10 @@ function! QNVimWinEvent(event, win, buffer)
     endif
     call rpcnotify(g:neovim_channel, 'Gui', 'winAutoCommand', a:event, a:win, a:buffer)
 endfunction
-execute "autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), winbufnr(win_getid()))"
+" WinNew fires before the new window's buffer is set: winbufnr() would report
+" the buffer of the window the split was made from. The buffer is read from
+" QNVimWindowInfo() once the command that created the window is processed.
+execute "autocmd WinNew * call QNVimWinEvent('WinNew', win_getid(), 0)"
 execute "autocmd WinEnter * call QNVimWinEvent('WinEnter', win_getid(), winbufnr(win_getid()))"
 execute "autocmd WinClosed * call QNVimWinEvent('WinClosed', str2nr(expand('<amatch>')), 0)"
 " Whether a search pattern is matched case-sensitively because of 'smartcase':
@@ -183,3 +186,9 @@ function! QNVimSourceRc()
     endif
 endfunction
 execute "autocmd VimEnter * call QNVimSourceRc()"
+" The restarted Neovim restores the session on UIEnter; qnvim rebuilds its
+" mappings then (see QNVimCore::finishSessionRestore()).
+execute "autocmd UIEnter * call rpcnotify(g:neovim_channel, 'Gui', 'uiEnter')"
+" A clean quit closes Qt Creator through its own Exit flow; the restart
+" handler needs v:exitreason to tell a restart from a quit.
+execute "autocmd VimLeavePre * call rpcnotify(g:neovim_channel, 'Gui', 'vimLeave', v:exitreason, v:exiting)"

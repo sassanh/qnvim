@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QPointer>
 
 namespace NeovimQt {
 class NeovimConnector;
@@ -8,10 +9,12 @@ class NeovimConnector;
 
 namespace QNVim::Internal {
 
+class QNVimCore;
+
 class TextEditEventFilter : public QObject {
     Q_OBJECT
   public:
-    explicit TextEditEventFilter(NeovimQt::NeovimConnector *nvim, QObject *parent = nullptr);
+    explicit TextEditEventFilter(QNVimCore *core, QObject *parent = nullptr);
 
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -19,7 +22,9 @@ class TextEditEventFilter : public QObject {
     void resizeNeeded();
 
   private:
-    NeovimQt::NeovimConnector *m_nvim;
+    // The command line widget outlives the core during shutdown; a QPointer
+    // becomes null when the core is destroyed.
+    QPointer<QNVimCore> m_core;
 };
 
 } // namespace QNVim::Internal

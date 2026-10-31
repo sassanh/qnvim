@@ -1,5 +1,7 @@
 #include "textediteventfilter.h"
 
+#include "qnvimcore.h"
+
 #include <QKeyEvent>
 #include <QPlainTextEdit>
 
@@ -10,13 +12,16 @@
 
 namespace QNVim::Internal {
 
-TextEditEventFilter::TextEditEventFilter(NeovimQt::NeovimConnector *nvim, QObject *parent)
-    : QObject(parent), m_nvim(nvim) {
+TextEditEventFilter::TextEditEventFilter(QNVimCore *core, QObject *parent)
+    : QObject(parent), m_core(core) {
 }
 
 bool TextEditEventFilter::eventFilter(QObject *watched, QEvent *event)
 {
-    if (!m_nvim or !m_nvim->isReady())
+    // Ask for the current connector: a restart replaces it, and the widget
+    // outlives the old connection.
+    NeovimQt::NeovimConnector *nvim = m_core ? m_core->nvimConnector() : nullptr;
+    if (!nvim or !nvim->isReady())
         return false;
 
     if (qobject_cast<TextEditor::TextEditorWidget *>(watched) ||
@@ -30,13 +35,13 @@ bool TextEditEventFilter::eventFilter(QObject *watched, QEvent *event)
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         QString key = NeovimQt::Input::convertKey(*keyEvent);
-        m_nvim->api6()->nvim_input(key.toUtf8());
+        nvim->api6()->nvim_input(key.toUtf8());
         return true;
     } else if (event->type() == QEvent::ShortcutOverride) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         QString key = NeovimQt::Input::convertKey(*keyEvent);
         if (keyEvent->key() == Qt::Key_Escape) {
-            m_nvim->api6()->nvim_input(key.toUtf8());
+            nvim->api6()->nvim_input(key.toUtf8());
         } else {
             keyEvent->accept();
         }

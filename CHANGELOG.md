@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file. This projec
 
 **Added**
 
+- `:restart` reconnects qnvim to the server Neovim starts. The old connection is kept until the old server exits, so a cancelled `:restart confirm qall` or a failed `qall` (`E37` with modified buffers) changes nothing and qnvim keeps working; `:restart +qall!` discards the changes and restarts. Once the new server has restored its session, Qt Creator's editors are mapped to its buffers by file name and the restored windows are bound to their views again. Editor content, including unsaved changes, is pushed into the new buffers, the current editor's buffer is shown even when the session only kept it in the buffer list, the command line keeps working, and `qnvim.vim`/`qnvim.lua` is sourced again. If reconnecting fails, Qt Creator's Exit flow runs instead of leaving a dead backend.
+
+- Quitting Neovim (`:q`, `:qa`, `:wq`, ...) exits Qt Creator through its normal Exit command, so Qt Creator's prompts (for example for modified documents) are shown and can be cancelled. A Neovim that exits with an error is not treated as a quit: Qt Creator stays open and the failure is logged.
+
 - Search highlighting: the matches of Neovim's last search pattern are shown in the editor with Qt Creator's search result colors while `'hlsearch'` is on, in every split that shows the buffer, and `:nohlsearch` clears them. While a `/` or `?` search is typed with `'incsearch'` and `'hlsearch'` on, the matches follow the text typed so far, and `<Esc>` restores the previous search's matches ([#26](https://github.com/sassanh/qnvim/issues/26)).
 
 - `qnvim.float_filter()`: the floating windows the Lua filter accepts are placed as if Neovim anchored them to the current window (their offset from that window is measured in the editor view instead of from the main window's top left corner), for floats that are drawn in Neovim's screen cells but belong to the text. Without a filter, nothing changes.

@@ -7,6 +7,7 @@
 #include "textpos.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/coreconstants.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/editormanager/ieditorfactory.h>
@@ -57,6 +58,8 @@
 #include <QTimer>
 
 #include <functional>
+
+#include <algorithm>
 
 namespace QNVim {
 namespace Internal {
@@ -169,6 +172,12 @@ QNVimCore::QNVimCore(QObject *parent)
         qputenv("NVIM_LISTEN_ADDRESS", oldListen);
 
     connect(mNVim, &NeovimQt::NeovimConnector::error, this, [this]() {
+        // During a restart the old connection closing is expected: it means
+        // the old server is gone and the new one can be used.
+        if (mRestartPending) {
+            confirmOldNeovimExited();
+            return;
+        }
         qCritical(Main) << "Neovim:" << mNVim->errorString() << "- QNVim functionality is unavailable";
         // The overlays of Neovim's floating windows have nothing to show any
         // more.
@@ -176,6 +185,57 @@ QNVimCore::QNVimCore(QObject *parent)
     });
 
     connect(mNVim, &NeovimQt::NeovimConnector::ready, this, &QNVimCore::setupNeovim);
+    // Remember which connection exited: after a restart the signal may arrive
+    // for the old server while the new one is already in use.
+    auto *spawnedConnector = mNVim;
+    connect(spawnedConnector, &NeovimQt::NeovimConnector::processExited, this,
+            [this, spawnedConnector](int exitCode) {
+        neovimProcessExited(spawnedConnector, exitCode);
+    });
+
+    mRestartTimer = new QTimer(this);
+    mRestartTimer->setSingleShot(true);
+    connect(mRestartTimer, &QTimer::timeout, this, [this]() {
+        if (!mRestartPending)
+            return;
+
+        if (mOldNeovimExited) {
+            qWarning(Main) << "Neovim restarted, but qnvim could not reconnect to it";
+            mRestartPending = false;
+            mInhibitWindowSync = false;
+            if (mRestartConnector) {
+                mRestartConnector->deleteLater();
+                mRestartConnector = nullptr;
+            }
+            mRestartProbeReady = false;
+            forgetNeovim();
+            triggerQtCreatorExit();
+            return;
+        }
+
+        if (mOldRestartInProgress) {
+            // `:restart` is waiting for the user (e.g. `:restart confirm
+            // qall`). The poll below notices when the restart is cancelled.
+            mRestartTimer->start(30000);
+            return;
+        }
+
+        abortRestart(QStringLiteral("the old Neovim did not exit"));
+    });
+
+    mRestartCheckTimer = new QTimer(this);
+    mRestartCheckTimer->setSingleShot(true);
+    connect(mRestartCheckTimer, &QTimer::timeout, this, &QNVimCore::checkOldNeovimRestart);
+
+    // Restoring the session is normally over in well under a second. If it
+    // does not finish (e.g. Neovim is waiting on a prompt while sourcing the
+    // session), qnvim has no usable backend left: do not stay half-connected.
+    mRestoreTimer = new QTimer(this);
+    mRestoreTimer->setSingleShot(true);
+    connect(mRestoreTimer, &QTimer::timeout, this, [this]() {
+        if (mRestoringSession)
+            failRestoredNeovim(QStringLiteral("restoring the session took too long"));
+    });
 
     m_cmdLine = new CmdLine(this);
 }
@@ -188,6 +248,21 @@ NumbersColumn *QNVimCore::numbersColumn() {
 
 QNVimCore::~QNVimCore()
 {
+    // The cleanup below quits Neovim; its VimLeavePre must not start Qt
+    // Creator's quit flow a second time.
+    mShuttingDown = true;
+    if (mRestartTimer)
+        mRestartTimer->stop();
+    if (mRestartCheckTimer)
+        mRestartCheckTimer->stop();
+    if (mRestoreTimer)
+        mRestoreTimer->stop();
+    if (mRestartConnector) {
+        disconnect(mRestartConnector, nullptr, this, nullptr);
+        mRestartConnector->deleteLater();
+        mRestartConnector = nullptr;
+    }
+
     disconnect(QApplication::styleHints(), &QStyleHints::cursorFlashTimeChanged,
                this, &QNVimCore::saveCursorFlashTime);
     QApplication::setCursorFlashTime(mSavedCursorFlashTime);
@@ -301,6 +376,19 @@ void QNVimCore::attachUi() {
     connect(request, &NeovimQt::MsgpackRequest::finished, this, [=, this]() {
         qInfo(Main) << "Neovim: attached!";
 
+        if (mRestoringSession) {
+            // The session is restored by the UIEnter autocommand; if its
+            // notification got lost, finish the restore anyway.
+            const quint64 generation = mRestartGeneration;
+            QTimer::singleShot(5000, this, [this, generation]() {
+                if (generation == mRestartGeneration and mRestoringSession) {
+                    qWarning(Main) << "Neovim: UIEnter was not reported, restoring anyway";
+                    finishSessionRestore();
+                }
+            });
+            return;
+        }
+
         auto pCurrentEditor = Core::EditorManager::currentEditor();
         if (pCurrentEditor)
             QNVimCore::editorOpened(pCurrentEditor);
@@ -316,6 +404,635 @@ void QNVimCore::installGuiHooks() {
 
     mNVim->api2()->nvim_subscribe("Gui");
     mNVim->api2()->nvim_subscribe("api-buffer-updates");
+}
+
+// Neovim's `:restart` starts a new server, sends the "restart" UI event with
+// its address, and then quits. The old server is kept until it is known to be
+// gone: if it cannot quit (e.g. `:restart confirm qall` is cancelled), it
+// kills the new server and continues to run, and qnvim has to keep using it.
+void QNVimCore::beginRestart(const QString &address) {
+    if (address.isEmpty() or mShuttingDown or mNeovimExited)
+        return;
+
+    if (mRestartPending or mRestoringSession) {
+        qWarning(Main) << "Neovim announced another restart while qnvim was still reconnecting:"
+                       << address;
+        return;
+    }
+
+    qInfo(Main) << "Neovim is restarting on" << address;
+
+    ++mRestartGeneration;
+    mRestartAddress = address;
+    mRestartPending = true;
+    mOldNeovimExited = false;
+    mOldRestartInProgress = false;
+    mRestartProbeReady = false;
+    mRestartProbeAttempts = 0;
+    mRestoreStarted = false;
+    mRestoreSyncPending = false;
+    mBindAllWindows = false;
+    mRestartEditors.clear();
+    // While the old server is going away, its redraws must not reconcile the
+    // windows or sync editors: the mappings are about to be rebuilt.
+    mInhibitWindowSync = true;
+    mWindowsDirty = false;
+    mPendingWindowViews.clear();
+
+    mRestartTimer->start(30000);
+    // The old server is the one that knows whether the restart is going to
+    // happen: ask it instead of connecting to the address (which it reuses,
+    // and which it starts listening on again when the restart fails).
+    mRestartCheckTimer->start(0);
+}
+
+// `:restart` sends the UI event before it tries to quit, so the old server
+// can still answer. While it is quitting, `v:exitreason` is "restart"; when
+// quitting fails (modified buffers, a cancelled `:restart confirm qall`, ...)
+// Neovim clears it and keeps running.
+void QNVimCore::checkOldNeovimRestart() {
+    if (!mRestartPending or mOldNeovimExited or !mNVim)
+        return;
+
+    if (!mNVim->isReady()) {
+        // The old connection is gone: the server exited, and the new one is
+        // the only one left.
+        confirmOldNeovimExited();
+        return;
+    }
+
+    auto request = mNVim->api2()->nvim_eval(QByteArrayLiteral("v:exitreason"));
+    request->setTimeout(2000);
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [this](quint32, quint64, const QVariant &value) {
+        if (!mRestartPending or mOldNeovimExited)
+            return;
+
+        if (value.toByteArray().startsWith("restart")) {
+            // The old server is on its way out; it may be waiting for the
+            // user to confirm quitting modified buffers.
+            mOldRestartInProgress = true;
+            mRestartCheckTimer->start(500);
+            return;
+        }
+
+        // The old server is still running and is no longer restarting:
+        // quitting failed or the restart was cancelled. Keep using it.
+        abortRestart(QStringLiteral("the old Neovim is still running"));
+    });
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [this](quint32, quint64, const QVariant &) {
+        if (!mRestartPending or mOldNeovimExited)
+            return;
+        confirmOldNeovimExited();
+    });
+    connect(request, &NeovimQt::MsgpackRequest::timeout, this, [this]() {
+        if (!mRestartPending or mOldNeovimExited)
+            return;
+        // The server did not answer. It may be exiting (the connection error
+        // or VimLeavePre will tell), so ask again rather than give up.
+        mRestartCheckTimer->start(500);
+    });
+}
+
+void QNVimCore::connectRestartProbe() {
+    if (!mRestartPending or mRestartConnector or mRestartAddress.isEmpty())
+        return;
+
+    // The address is reused by the new server, but the old one may start
+    // listening on it again when its restart fails. Only connect once the old
+    // server is gone.
+    if (!mOldNeovimExited)
+        return;
+
+    if (mRestartProbeAttempts >= 10) {
+        qWarning(Main) << "Neovim restarted, but qnvim could not reconnect to it";
+        mRestartPending = false;
+        mInhibitWindowSync = false;
+        forgetNeovim();
+        triggerQtCreatorExit();
+        return;
+    }
+
+    ++mRestartProbeAttempts;
+
+    auto *conn = NeovimQt::NeovimConnector::connectToNeovim(mRestartAddress);
+    mRestartConnector = conn;
+    connect(conn, &NeovimQt::NeovimConnector::ready, this, [this, conn]() {
+        if (conn != mRestartConnector)
+            return;
+
+        qInfo(Main) << "Neovim: connected to the restarted server";
+        mRestartProbeReady = true;
+        maybeFinishRestart();
+    });
+    connect(conn, &NeovimQt::NeovimConnector::error, this, [this, conn]() {
+        if (conn != mRestartConnector)
+            return;
+
+        qWarning(Main) << "Neovim: could not connect to the restarted server:"
+                       << conn->errorString();
+        mRestartConnector = nullptr;
+        conn->deleteLater();
+        mRestartProbeReady = false;
+
+        if (!mRestartPending)
+            return;
+
+        if (mRestartProbeAttempts < 10) {
+            QTimer::singleShot(200, this, [this]() { connectRestartProbe(); });
+            return;
+        }
+
+        qWarning(Main) << "Neovim restarted, but qnvim could not reconnect to it";
+        mRestartPending = false;
+        mInhibitWindowSync = false;
+        forgetNeovim();
+        triggerQtCreatorExit();
+    });
+}
+
+void QNVimCore::abortRestart(const QString &reason) {
+    if (!mRestartPending)
+        return;
+
+    qWarning(Main) << "Neovim restart failed:" << reason << "- keeping the old connection";
+    mRestartPending = false;
+    mOldNeovimExited = false;
+    mOldRestartInProgress = false;
+    mRestartAddress.clear();
+    mRestartEditors.clear();
+    mRestoreSyncPending = false;
+    mRestartTimer->stop();
+    mRestartCheckTimer->stop();
+
+    if (mRestartConnector) {
+        disconnect(mRestartConnector, nullptr, this, nullptr);
+        mRestartConnector->deleteLater();
+        mRestartConnector = nullptr;
+    }
+
+    mRestartProbeReady = false;
+    mInhibitWindowSync = false;
+    mWindowsDirty = true;
+    // The failed restart may have left a view without its window (the old
+    // server kept running, but qnvim did not reconcile while it was waiting).
+    // Give every view its window again.
+    mRestoreViewsPending = true;
+    if (mNVim and mNVim->isReady() and !mNeovimExited)
+        reconcileWindows();
+}
+
+void QNVimCore::confirmOldNeovimExited() {
+    if (!mRestartPending or mOldNeovimExited)
+        return;
+
+    qInfo(Main) << "Neovim: the old server exited, attaching to the restarted one";
+    mOldNeovimExited = true;
+    mRestartCheckTimer->stop();
+    connectRestartProbe();
+}
+
+void QNVimCore::maybeFinishRestart() {
+    if (!mRestartPending or !mOldNeovimExited or !mRestartProbeReady or !mRestartConnector)
+        return;
+
+    finishRestart();
+}
+
+void QNVimCore::finishRestart() {
+    qInfo(Main) << "Neovim: reconnecting to the restarted server";
+
+    mRestartPending = false;
+    mOldNeovimExited = false;
+    mOldRestartInProgress = false;
+    mRestartProbeReady = false;
+    mRestartTimer->stop();
+    mRestartCheckTimer->stop();
+
+    // The editors qnvim knew before the restart are the ones that still have
+    // views in Qt Creator; map them to the new server's buffers by name.
+    mRestartEditors.clear();
+    QSet<Core::IEditor *> seen;
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        Core::IEditor *editor = it.key();
+        if (editor and !seen.contains(editor)) {
+            seen.insert(editor);
+            mRestartEditors.append(editor);
+        }
+    }
+    for (Core::IEditor *editor : Core::EditorManager::visibleEditors()) {
+        if (editor and !seen.contains(editor)) {
+            seen.insert(editor);
+            mRestartEditors.append(editor);
+        }
+    }
+
+    NeovimQt::NeovimConnector *oldConnector = mNVim;
+    mNVim = mRestartConnector;
+    mRestartConnector = nullptr;
+    mRestartAddress.clear();
+
+    if (oldConnector) {
+        disconnect(oldConnector, nullptr, this, nullptr);
+        if (oldConnector->isReady()) {
+            if (auto *api = oldConnector->api2())
+                disconnect(api, nullptr, this, nullptr);
+        }
+        oldConnector->deleteLater();
+    }
+
+    auto *conn = mNVim;
+    connect(conn, &NeovimQt::NeovimConnector::error, this, [this, conn]() {
+        if (conn != mNVim)
+            return;
+        // A restart on this server: its connection closing means the old
+        // server is gone (see checkOldNeovimRestart()).
+        if (mRestartPending) {
+            confirmOldNeovimExited();
+            return;
+        }
+        qCritical(Main) << "Neovim:" << conn->errorString()
+                        << "- QNVim functionality is unavailable";
+        mFloatLayer.clearFloats();
+        if (mRestoringSession)
+            failRestoredNeovim(QStringLiteral("the restarted Neovim reported an error"));
+    });
+
+    // Every old buffer and window id is invalid in the new server. The
+    // editors themselves (Qt Creator's documents and views) stay where they
+    // are; they are mapped to the restored buffers in finishSessionRestore().
+    for (auto &state : mWindows)
+        QObject::disconnect(state.viewDestroyed);
+    mBuffers.clear();
+    mEditors.clear();
+    mChangedTicks.clear();
+    mBufferType.clear();
+    mPendingPush.clear();
+    mText.clear();
+    mTextBuffer = 0;
+    mWindows.clear();
+    mNewWindows.clear();
+    mClosingWindows.clear();
+    mPendingWindowViews.clear();
+    mCurrentWindow = 0;
+    mFloatGrids.clear();
+    mFloatFilters.clear();
+    mFloatLayer.clearFloats();
+    mWindowsDirty = false;
+    mNeovimExited = false;
+    mRestoringSession = true;
+    mRestoreStarted = false;
+    mRestoreSyncPending = false;
+    mBindAllWindows = false;
+    mInhibitWindowSync = true;
+
+    mRestoreTimer->start(30000);
+    installGuiHooks();
+
+    // The new server sources the saved session when the first UI attaches
+    // (UIEnter). The preamble is not installed yet: its BufReadCmd would stop
+    // Neovim from reading the session's files, and their content (and the
+    // cursor positions saved with it) must be there before the session is
+    // restored. Only the channel and the UIEnter hook are set up now.
+    QByteArray setupCommand = "let g:neovim_channel=";
+    setupCommand += QByteArray::number(static_cast<qulonglong>(mNVim->channel()));
+    setupCommand += "\n";
+    setupCommand += "autocmd UIEnter * call rpcnotify(g:neovim_channel, 'Gui', 'uiEnter')";
+    setupCommand += "\n";
+    setupCommand += "autocmd VimEnter * ++once call rpcnotify(g:neovim_channel, 'Gui', 'vimEnter')";
+    setupCommand += "\n";
+    // The session source fires this when it is done; the UIEnter hook above is
+    // only a fallback (the source is another UIEnter autocommand).
+    setupCommand += "autocmd SessionLoadPost * ++once call rpcnotify(g:neovim_channel, 'Gui', 'sessionLoaded')";
+    auto request = mNVim->api2()->nvim_command(setupCommand);
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not set up the restarted Neovim:" << error;
+    });
+
+    attachUi();
+}
+
+void QNVimCore::finishSessionRestore() {
+    if (!mRestoringSession or mRestoreStarted or !mNVim or !mNVim->isReady())
+        return;
+
+    mRestoreStarted = true;
+    qInfo(Main) << "Neovim: session restored, rebuilding the editor mappings";
+
+    // The session is in place: install the autocommands and commands that make
+    // Neovim notify qnvim (from now on BufReadCmd suppresses file reading as
+    // usual). The editor mappings do not depend on the preamble.
+    sendPreamble();
+
+    // The restarted server already fired VimEnter before the preamble (and its
+    // VimEnter autocommand) arrived, so the user's qnvim.vim/qnvim.lua has not
+    // run yet. Source it now, as the normal startup does.
+    auto rcRequest = mNVim->api2()->nvim_call_function(QByteArrayLiteral("QNVimSourceRc"), {});
+    connect(rcRequest, &NeovimQt::MsgpackRequest::error, this,
+            [](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not source the user's qnvim configuration:" << error;
+    });
+
+    mapRestoredEditors();
+}
+
+void QNVimCore::mapRestoredEditors() {
+    if (!mNVim or !mNVim->isReady() or !mRestoringSession)
+        return;
+
+    const quint64 generation = mRestartGeneration;
+    mPendingRestoreMappings = 0;
+
+    QSet<Core::IEditor *> seen;
+    for (const QPointer<Core::IEditor> &editorPtr : mRestartEditors) {
+        Core::IEditor *editor = editorPtr.data();
+        if (!editor or seen.contains(editor))
+            continue;
+        seen.insert(editor);
+
+        const QString name = filename(editor);
+        if (name.isEmpty())
+            continue;
+
+        const QPointer<Core::IEditor> editorGuard(editor);
+        ++mPendingRestoreMappings;
+
+        // bufnr() takes a file pattern, not a literal name: escape the
+        // characters that are special in one ('[', '*', '?', ...), or a file
+        // like "a[1].txt" could be paired with "a1.txt".
+        auto escapeRequest = mNVim->api2()->nvim_call_function(
+            QByteArrayLiteral("fnameescape"), {name});
+        connect(escapeRequest, &NeovimQt::MsgpackRequest::finished, this,
+                [this, editorGuard, generation](quint32, quint64, const QVariant &escaped) {
+            if (generation != mRestartGeneration or !mRestoringSession)
+                return;
+
+            auto request = mNVim->api2()->nvim_call_function(QByteArrayLiteral("bufnr"),
+                                                             {escaped});
+            connect(request, &NeovimQt::MsgpackRequest::finished, this,
+                    [this, editorGuard, generation](quint32, quint64, const QVariant &result) {
+                if (generation != mRestartGeneration or !mRestoringSession)
+                    return;
+
+                bindRestoredEditor(editorGuard.data(), result.toInt());
+                restoreMappingRequestDone();
+            });
+            connect(request, &NeovimQt::MsgpackRequest::error, this,
+                    [this, generation](quint32, quint64, const QVariant &error) {
+                if (generation != mRestartGeneration or !mRestoringSession)
+                    return;
+                qWarning(Main) << "Could not look up a buffer in the restarted Neovim:"
+                               << error;
+                restoreMappingRequestDone();
+            });
+        });
+        connect(escapeRequest, &NeovimQt::MsgpackRequest::error, this,
+                [this, generation](quint32, quint64, const QVariant &error) {
+            if (generation != mRestartGeneration or !mRestoringSession)
+                return;
+            qWarning(Main) << "Could not escape a file name for the restarted Neovim:"
+                           << error;
+            restoreMappingRequestDone();
+        });
+    }
+
+    if (mPendingRestoreMappings == 0)
+        finishRestoredMapping();
+}
+
+void QNVimCore::bindRestoredEditor(Core::IEditor *editor, int buffer) {
+    if (!editor or buffer <= 0 or !mRestoringSession or mBuffers.contains(editor))
+        return;
+
+    mBuffers[editor] = buffer;
+    if (!mEditors.contains(buffer) or Core::EditorManager::currentEditor() == editor)
+        mEditors[buffer] = editor;
+    mChangedTicks.remove(buffer);
+    // The editor content is authoritative for a buffer qnvim shows. An empty
+    // read from Neovim must not wipe it before the content was compared.
+    mPendingPush.insert(buffer);
+}
+
+void QNVimCore::restoreMappingRequestDone() {
+    if (!mRestoringSession)
+        return;
+
+    if (mPendingRestoreMappings > 0)
+        --mPendingRestoreMappings;
+
+    if (mPendingRestoreMappings == 0)
+        finishRestoredMapping();
+}
+
+void QNVimCore::finishRestoredMapping() {
+    if (!mNVim or !mNVim->isReady() or !mRestoringSession)
+        return;
+
+    const quint64 generation = mRestartGeneration;
+    auto restoreWindows = [this, generation]() {
+        if (generation != mRestartGeneration or !mRestoringSession)
+            return;
+        QNVimCore::restoreWindows();
+    };
+
+    // Help and terminal buffers need their type when an editor is opened for
+    // them; the restored windows do not tell it.
+    auto request = mNVim->api2()->nvim_eval(
+        QByteArrayLiteral("map(getbufinfo(), {_, b -> [b.bufnr, "
+                          "getbufvar(b.bufnr, '&buftype')]})"));
+    connect(request, &NeovimQt::MsgpackRequest::finished, this,
+            [this, restoreWindows](quint32, quint64, const QVariant &result) {
+        for (const QVariant &entry : result.toList()) {
+            const QVariantList info = entry.toList();
+            if (info.size() >= 2)
+                mBufferType[info[0].toInt()] = QString::fromUtf8(info[1].toByteArray());
+        }
+        restoreWindows();
+    });
+    connect(request, &NeovimQt::MsgpackRequest::error, this,
+            [restoreWindows](quint32, quint64, const QVariant &error) {
+        qWarning(Main) << "Could not read the buffer types from the restarted Neovim:" << error;
+        restoreWindows();
+    });
+}
+
+void QNVimCore::restoreWindows() {
+    if (!mNVim or !mNVim->isReady() or !mRestoringSession)
+        return;
+
+    mRestoringSession = false;
+    mRestoreStarted = false;
+    mInhibitWindowSync = false;
+    mBindAllWindows = true;
+    mRestoreViewsPending = true;
+    mRestoreSyncPending = true;
+    mWindowsDirty = true;
+    mNewWindows.clear();
+    mRestartEditors.clear();
+    mRestoreTimer->stop();
+
+    // The restarted server read the session's files from disk, but the
+    // editors are authoritative for the buffers qnvim shows (they may have
+    // unsaved changes). Push their content before the windows are bound, so
+    // Neovim shows the text the editors have.
+    const QSet<int> pendingPush = mPendingPush;
+    for (int buffer : pendingPush) {
+        if (mEditors.contains(buffer))
+            initializeBuffer(buffer);
+    }
+
+    reconcileWindows();
+}
+
+void QNVimCore::restoreCurrentEditorWindow() {
+    if (!mNVim or !mNVim->isReady())
+        return;
+
+    Core::IEditor *editor = Core::EditorManager::currentEditor();
+    if (!editor or !mBuffers.contains(editor) or windowForEditor(editor))
+        return;
+
+    // The session may not have a window for the editor: its buffer can be in
+    // the buffer list only (e.g. the startup dashboard was the current window
+    // when the session was saved). Use the current Neovim window if no view is
+    // bound to it; otherwise split a window off for the editor.
+    if (mCurrentWindow) {
+        auto it = mWindows.find(mCurrentWindow);
+        if (it != mWindows.end() and !it.value().bound) {
+            bindWindow(mCurrentWindow, editor);
+            if (const int buffer = bufferForEditor(editor)) {
+                mNVim->api5()->nvim_win_set_buf(mCurrentWindow, buffer);
+                mNVim->api2()->nvim_set_current_win(mCurrentWindow);
+            }
+            syncCursorToVim(editor);
+            return;
+        }
+    }
+
+    ensureWindowForView(editor);
+}
+
+void QNVimCore::failRestoredNeovim(const QString &reason) {
+    if (!mRestoringSession)
+        return;
+
+    qWarning(Main) << "Neovim restart failed:" << reason;
+    mRestoringSession = false;
+    mRestoreStarted = false;
+    mRestoreSyncPending = false;
+    mRestartEditors.clear();
+    mRestoreTimer->stop();
+    mInhibitWindowSync = false;
+    mNeovimExited = true;
+    forgetNeovim();
+    triggerQtCreatorExit();
+}
+
+void QNVimCore::handleNeovimLeave(const QByteArray &reason, int exitCode) {
+    if (mShuttingDown or mNeovimExited)
+        return;
+
+    if (mRestartPending) {
+        if (reason.startsWith("restart")) {
+            confirmOldNeovimExited();
+        } else {
+            // The old server went away without restarting; there is no new
+            // server to connect to.
+            abortRestart(QStringLiteral("Neovim exited without restarting"));
+            mNeovimExited = true;
+            forgetNeovim();
+            if (exitCode == 0)
+                triggerQtCreatorExit();
+        }
+        return;
+    }
+
+    if (reason.startsWith("restart")) {
+        // The restart event (with the new server's address) never arrived;
+        // there is nothing qnvim can reconnect to.
+        qWarning(Main) << "Neovim restarted without telling qnvim where to reconnect";
+        mNeovimExited = true;
+        forgetNeovim();
+        triggerQtCreatorExit();
+        return;
+    }
+
+    mNeovimExited = true;
+    forgetNeovim();
+    if (exitCode != 0) {
+        qWarning(Main) << "Neovim exited with" << exitCode;
+        return;
+    }
+
+    qInfo(Main) << "Neovim exited; closing Qt Creator";
+    triggerQtCreatorExit();
+}
+
+void QNVimCore::neovimProcessExited(NeovimQt::NeovimConnector *connector, int exitCode) {
+    if (mShuttingDown)
+        return;
+
+    // VimLeavePre is sent before the process exits; give the notification a
+    // moment to arrive, so a restart is recognized as such.
+    QTimer::singleShot(200, this, [this, connector, exitCode]() {
+        if (mShuttingDown or connector != mNVim)
+            return; // the connection was replaced (restart) or forgotten
+
+        if (mRestartPending) {
+            confirmOldNeovimExited();
+            return;
+        }
+
+        if (mNeovimExited or mQuitTriggered) {
+            forgetNeovim();
+            return;
+        }
+
+        mNeovimExited = true;
+        forgetNeovim();
+        if (exitCode == 0)
+            triggerQtCreatorExit();
+    });
+}
+
+void QNVimCore::triggerQtCreatorExit() {
+    if (mQuitTriggered or mShuttingDown)
+        return;
+
+    mQuitTriggered = true;
+    // Neovim's notification is dispatched from the connection; quitting Qt
+    // Creator here would destroy qnvim (and the connection) while it is still
+    // handling the notification.
+    QTimer::singleShot(0, this, [this]() {
+        if (mShuttingDown)
+            return;
+
+        Core::Command *command
+            = Core::ActionManager::command(Utils::Id::fromName(Core::Constants::EXIT));
+        if (!command) {
+            qWarning(Main) << "No Qt Creator Exit command" << Core::Constants::EXIT;
+            return;
+        }
+        command->action()->trigger();
+    });
+}
+
+void QNVimCore::forgetNeovim() {
+    if (!mNVim)
+        return;
+
+    NeovimQt::NeovimConnector *connector = mNVim;
+    mNVim = nullptr;
+    disconnect(connector, nullptr, this, nullptr);
+    if (connector->isReady()) {
+        if (auto *api = connector->api2())
+            disconnect(api, nullptr, this, nullptr);
+    }
+    connector->deleteLater();
+    mPendingWindowViews.clear();
+    mFloatLayer.clearFloats();
 }
 
 QString QNVimCore::filename(Core::IEditor *editor) const {
@@ -594,16 +1311,84 @@ Core::IEditor *QNVimCore::editorWithoutWindow(int buffer) const {
     return nullptr;
 }
 
-void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
+QPoint QNVimCore::viewPosition(QWidget *view) {
+    if (!view)
+        return QPoint(INT_MAX, INT_MAX);
+    return view->mapTo(view->window(), QPoint(0, 0));
+}
+
+Core::IEditor *QNVimCore::boundEditorIn(QWidget *root, QWidget *target) const {
+    if (!root)
+        return nullptr;
+
+    Core::IEditor *best = nullptr;
+    int bestDistance = 0;
+    const QPoint targetPosition = viewPosition(target);
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        Core::IEditor *editor = it.key();
+        QWidget *view = editorViewWidget(editor);
+        if (!editor or !view or !windowForView(view))
+            continue;
+        if (root != view and !root->isAncestorOf(view))
+            continue;
+
+        const int distance = (viewPosition(view) - targetPosition).manhattanLength();
+        if (!best or distance < bestDistance) {
+            best = editor;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+bool QNVimCore::splitForView(QWidget *view, int &sourceWin, QByteArray &split) const {
+    QWidget *child = view;
+    for (QWidget *parent = view ? view->parentWidget() : nullptr; parent;
+         child = parent, parent = parent->parentWidget()) {
+        auto *splitter = qobject_cast<QSplitter *>(parent);
+        if (!splitter)
+            continue;
+
+        const int index = splitter->indexOf(child);
+        if (index < 0)
+            continue;
+
+        // The sibling side of the nearest splitter says where the view is:
+        // the first child is left of / above the second one.
+        Core::IEditor *source = boundEditorIn(splitter->widget(1 - index), view);
+        if (!source)
+            continue;
+
+        const int win = windowForEditor(source);
+        if (!win)
+            continue;
+
+        sourceWin = win;
+        const bool before = (index == 0);
+        if (splitter->orientation() == Qt::Horizontal)
+            split = before ? QByteArrayLiteral("left") : QByteArrayLiteral("right");
+        else
+            split = before ? QByteArrayLiteral("above") : QByteArrayLiteral("below");
+        return true;
+    }
+
+    // No sibling view has a window (e.g. a single view): fall back to the
+    // current window.
+    sourceWin = mCurrentWindow;
+    split = QByteArrayLiteral("below");
+    return sourceWin != 0;
+}
+
+bool QNVimCore::bindWindow(int win, Core::IEditor *editor) {
     if (!win or !editor)
-        return;
+        return false;
 
     QWidget *view = editorViewWidget(editor);
     if (!view)
-        return;
+        return false;
 
     if (!bindWindowToView(win, view))
-        return;
+        return false;
 
     WindowState &st = mWindows[win];
     st.editor = editor;
@@ -626,6 +1411,8 @@ void QNVimCore::bindWindow(int win, Core::IEditor *editor) {
         else
             refreshSearchHighlights();
     }
+
+    return true;
 }
 
 bool QNVimCore::bindWindowToView(int win, QWidget *view) {
@@ -674,6 +1461,8 @@ void QNVimCore::watchView(int win, QWidget *view) {
         state.view = nullptr;
         state.editor = nullptr;
         state.bound = false;
+        if (mShuttingDown or mRestartPending or mRestoringSession)
+            return;
         if (mWindows.size() <= 1)
             return; // Neovim cannot close its last window
         closeWindowForView(win);
@@ -800,11 +1589,20 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
     if (!mNVim or !mNVim->isReady() or mInhibitWindowSync)
         return;
 
+    if (mRestartPending or mRestoringSession)
+        return;
+
     if (!editor)
         return;
 
     QWidget *view = editorViewWidget(editor);
     if (!view or windowForView(view))
+        return;
+
+    // An editor that is not the one its view shows (a tab, or an editor the
+    // view showed before) does not get a window: the view can show only one
+    // buffer, and the window is created when the editor becomes visible.
+    if (editorForView(view) != editor)
         return;
 
     if (mPendingWindowViews.contains(view))
@@ -842,6 +1640,7 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
         config.insert("win", source);
 
     const QPointer<QWidget> viewGuard(view);
+    const quint64 generation = mRestartGeneration;
     // The view may be destroyed while the request is in flight; it must not
     // stay in the pending set then.
     const QMetaObject::Connection viewGone = QObject::connect(
@@ -851,31 +1650,56 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
         QObject::disconnect(viewGone);
     };
 
-    auto request = mNVim->api6()->nvim_open_win(buffer, true, config);
+    // The window is not entered here: Neovim's current window must follow the
+    // editor current in Qt Creator, and the view may not be the current one
+    // (e.g. when the windows left over after a restart are created). Entering
+    // it would make Neovim work in another window than the one the user is in.
+    // The finished callback enters the window when its view is current.
+    auto request = mNVim->api6()->nvim_open_win(buffer, false, config);
     connect(request, &NeovimQt::MsgpackRequest::finished, this,
             [=, this](quint32, quint64, const QVariant &result) {
         requestDone();
 
-        if (!mNVim or !mNVim->isReady())
+        // The request belongs to the server that is current when it was sent;
+        // after a restart its answer must not be applied to the new one.
+        if (generation != mRestartGeneration or !mNVim or !mNVim->isReady())
             return;
 
         const int win = result.toInt();
-        if (!win)
+        if (!win) {
+            if (mRestoreViewsPending)
+                ensureWindowsForUnboundViews();
             return;
+        }
 
-        if (!mWindows.contains(win))
-            mWindows[win].buffer = buffer;
+        // The window was created for this buffer. WinNew may have inserted the
+        // window with the buffer of the window it was split from (Neovim sets
+        // the new window's buffer after firing WinNew), so set it here.
+        mWindows[win].buffer = buffer;
 
         auto it = mWindows.find(win);
-        if (it != mWindows.end() and it.value().bound)
-            return; // paired with a view already (e.g. by reconcileWindows())
+        if (it != mWindows.end() and it.value().bound) {
+            // paired with a view already (e.g. by reconcileWindows())
+            if (mRestoreViewsPending)
+                ensureWindowsForUnboundViews();
+            return;
+        }
 
         // The editor the view shows now is the one the window represents; the
         // editor the window was created for may be gone by now.
         Core::IEditor *windowEditor = editorForView(viewGuard);
         if (windowEditor) {
-            bindWindow(win, windowEditor);
-            syncCursorToVim(windowEditor);
+            if (!bindWindow(win, windowEditor)) {
+                // The view is represented by another window by now (it changed
+                // while this one was being created): this one has no view.
+                closeWindowForView(win);
+            } else if (Core::EditorManager::currentEditor() == windowEditor) {
+                // The view is the one the user is in: Neovim works in the new
+                // window as well (syncWindow() makes it the current one).
+                syncWindow(win, windowEditor);
+            } else {
+                syncCursorToVim(windowEditor);
+            }
         } else if (viewGuard) {
             // The view exists but shows no editor (yet): pair it with the
             // window anyway, so that the window is not mistaken for one that
@@ -887,6 +1711,9 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
             closeWindowForView(win);
         }
 
+        if (mRestoreViewsPending)
+            ensureWindowsForUnboundViews();
+
         // The window that was on its way may have kept reconciliation from
         // running; do it now that it is paired.
         if (mWindowsDirty)
@@ -896,7 +1723,51 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
             [=, this](quint32, quint64, const QVariant &error) {
         requestDone();
         qWarning(Main) << "Could not open a window in Neovim:" << error;
+        // Do not retry forever: the view stays without a window and the user
+        // can create the split in Qt Creator instead.
+        mRestoreViewsPending = false;
     });
+}
+
+void QNVimCore::ensureWindowsForUnboundViews() {
+    if (!mNVim or !mNVim->isReady() or mInhibitWindowSync)
+        return;
+
+    if (!mRestoreViewsPending or mRestartPending or mRestoringSession)
+        return;
+
+    if (!mPendingWindowViews.isEmpty())
+        return; // the window of a previous view is still being created
+
+    // The first view in the layout that has no window.
+    Core::IEditor *candidate = nullptr;
+    QPoint candidatePosition;
+    for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+        Core::IEditor *editor = it.key();
+        QWidget *view = editorViewWidget(editor);
+        if (!editor or !view or windowForView(view))
+            continue;
+
+        const QPoint position = viewPosition(view);
+        if (!candidate or position.y() < candidatePosition.y()
+            or (position.y() == candidatePosition.y()
+                and position.x() < candidatePosition.x())) {
+            candidate = editor;
+            candidatePosition = position;
+        }
+    }
+
+    if (!candidate) {
+        mRestoreViewsPending = false;
+        return;
+    }
+
+    int sourceWin = 0;
+    QByteArray split;
+    if (splitForView(editorViewWidget(candidate), sourceWin, split))
+        ensureWindowForView(candidate, sourceWin, split);
+    else
+        ensureWindowForView(candidate);
 }
 
 void QNVimCore::createViewForWindow(int win, int buffer, const QString &filename, int sourceWin,
@@ -1020,7 +1891,7 @@ Core::IEditor *QNVimCore::openEditorForBuffer(int buffer, const QString &filenam
 }
 
 void QNVimCore::closeWindowForView(int win) {
-    if (!mNVim or !mNVim->isReady())
+    if (!mNVim or !mNVim->isReady() or mRestartPending or mRestoringSession or mShuttingDown)
         return;
 
     if (!mWindows.contains(win) or mClosingWindows.contains(win))
@@ -1089,6 +1960,13 @@ void QNVimCore::reconcileWindows() {
     if (!mWindowsDirty or !mNVim or !mNVim->isReady())
         return;
 
+    if (mRestartPending or mRestoringSession) {
+        // The old server is going away, or the new one is still restoring its
+        // session: the mappings are not usable yet.
+        mWindowsDirty = true;
+        return;
+    }
+
     if (mCreatingViewForWindow or !mPendingWindowViews.isEmpty()) {
         // A counterpart is being created: reconciling now would see the
         // window or view that is on its way as missing and create a duplicate.
@@ -1143,10 +2021,65 @@ void QNVimCore::reconcileWindows() {
 
         // Windows Neovim created that are still nothing but windows now that
         // the command that created them was fully processed are splits: each
-        // one needs an editor view in Qt Creator.
+        // one needs an editor view in Qt Creator. After a restart every
+        // restored window needs its view, not only the ones reported as new.
+        if (mBindAllWindows) {
+            // The session restored Neovim's windows; Qt Creator kept its views.
+            // Both layouts have an order (top to bottom, left to right): pair
+            // them in that order, so that each window gets the view it was
+            // saved from instead of an arbitrary one that shows the same
+            // buffer.
+            QList<WindowInfo> restoredWindows;
+            for (const WindowInfo &window : windows) {
+                auto it = mWindows.find(window.win);
+                if (it != mWindows.end() and !it.value().bound
+                    and !mClosingWindows.contains(window.win))
+                    restoredWindows.append(window);
+            }
+            std::sort(restoredWindows.begin(), restoredWindows.end(),
+                      [](const WindowInfo &a, const WindowInfo &b) {
+                if (a.tab != b.tab)
+                    return a.tab < b.tab;
+                if (a.row != b.row)
+                    return a.row < b.row;
+                return a.col < b.col;
+            });
+
+            QList<Core::IEditor *> unboundEditors;
+            for (auto it = mBuffers.cbegin(); it != mBuffers.cend(); ++it) {
+                Core::IEditor *editor = it.key();
+                QWidget *view = editorViewWidget(editor);
+                // Only the editor a view shows now: a view keeps the editors
+                // it showed before in its history, and pairing a window with
+                // one of those would leave the view showing another buffer.
+                if (editor and view and !windowForView(view)
+                    and editorForView(view) == editor)
+                    unboundEditors.append(editor);
+            }
+            std::sort(unboundEditors.begin(), unboundEditors.end(),
+                      [this](Core::IEditor *a, Core::IEditor *b) {
+                const QPoint pa = viewPosition(editorViewWidget(a));
+                const QPoint pb = viewPosition(editorViewWidget(b));
+                if (pa.y() != pb.y())
+                    return pa.y() < pb.y();
+                return pa.x() < pb.x();
+            });
+
+            for (const WindowInfo &window : restoredWindows) {
+                for (int i = 0; i < unboundEditors.size(); ++i) {
+                    Core::IEditor *editor = unboundEditors.at(i);
+                    if (bufferForEditor(editor) != window.buffer)
+                        continue;
+                    bindWindow(window.win, editor);
+                    unboundEditors.removeAt(i);
+                    break;
+                }
+            }
+        }
+
         QSet<int> newWindows;
         for (const WindowInfo &window : windows) {
-            if (!mNewWindows.contains(window.win))
+            if (!mNewWindows.contains(window.win) and !mBindAllWindows)
                 continue;
 
             auto it = mWindows.find(window.win);
@@ -1233,6 +2166,33 @@ void QNVimCore::reconcileWindows() {
         }
 
         mNewWindows = newWindows;
+        mBindAllWindows = false;
+
+        // After a restart the restored session's current window is Neovim's
+        // current one: show its editor and let the restored cursor, viewport
+        // and text come back from Neovim.
+        if (mRestoreSyncPending) {
+            mRestoreSyncPending = false;
+            restoreCurrentEditorWindow();
+            // Only activate a window that shows the editor current in Qt
+            // Creator: after restoreCurrentEditorWindow() created a split, the
+            // window Neovim restored may belong to another editor.
+            if (Core::IEditor *current = Core::EditorManager::currentEditor()) {
+                if (const int editorWindow = windowForEditor(current)) {
+                    const bool inhibited = mInhibitWindowSync;
+                    mInhibitWindowSync = true;
+                    activateWindowEditor(editorWindow);
+                    mInhibitWindowSync = inhibited;
+                }
+            }
+            refreshWindowSizes();
+            syncFromVim();
+        }
+
+        // Views the session did not restore a window for get one, in the place
+        // Qt Creator shows them.
+        if (mRestoreViewsPending)
+            ensureWindowsForUnboundViews();
     });
 }
 
@@ -1241,6 +2201,8 @@ void QNVimCore::attachEditorToWindow(Core::IEditor *editor) {
         return;
 
     const QPointer<QWidget> view = editorViewWidget(editor);
+    if (!view or editorForView(view) != editor)
+        return; // the view shows another editor (a tab, or the editor's history)
 
     // The editor's view may already represent a window: it shows the editor
     // now.
@@ -1617,6 +2579,9 @@ void QNVimCore::syncCursorFromVim(int win, const QVariantList &pos, const QVaria
 }
 
 void QNVimCore::syncToVim(Core::IEditor *editor, std::function<void()> callback) {
+    if (!mNVim or !mNVim->isReady() or mRestartPending or mRestoringSession)
+        return;
+
     if (!editor)
         editor = Core::EditorManager::currentEditor();
 
@@ -1820,6 +2785,9 @@ void QNVimCore::applySearchHighlights() {
 }
 
 void QNVimCore::syncFromVim() {
+    if (!mNVim or !mNVim->isReady() or mRestartPending or mRestoringSession)
+        return;
+
     auto editor = Core::EditorManager::currentEditor();
 
     if (!editor or !mBuffers.contains(editor))
@@ -2104,6 +3072,9 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     if (!mEnabled)
         return;
 
+    if (mRestartPending or mRestoringSession)
+        return; // the mappings are rebuilt when the restarted Neovim is ready
+
     if (!editor) {
         if (mNumbersColumn)
             mNumbersColumn->setEditor(nullptr);
@@ -2137,8 +3108,16 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
     // editor is in its window.
     int bufferToInitialize = 0;
 
+    // Only the editor a view shows is represented by a window. The editorOpened
+    // signal also fires for editors opened in the background (a tab in a view
+    // that shows another editor); their window is created when they become
+    // visible.
+    QWidget *view = editorViewWidget(editor);
+    const bool shown = view and editorForView(view) == editor;
+
     if (mBuffers.contains(editor)) {
-        if (!mSettingBufferFromVim and !mInhibitWindowSync and mNVim and mNVim->isReady()) {
+        if (shown and !mSettingBufferFromVim and !mInhibitWindowSync and mNVim
+            and mNVim->isReady()) {
             // The editor became current in Qt Creator: its window shows its
             // buffer and becomes Neovim's current window (a view without a
             // window is given one).
@@ -2267,7 +3246,8 @@ void QNVimCore::editorAboutToClose(Core::IEditor *editor) {
     } else {
         // When Neovim itself is deleting the buffer, it is already gone or being
         // deleted there; `bd!` would only fail with E516 and show a bogus message.
-        if (!mVimInitiatedClose and mNVim and mNVim->isReady())
+        if (!mVimInitiatedClose and !mRestartPending and !mRestoringSession
+            and mNVim and mNVim->isReady())
             mNVim->api2()->nvim_command(QStringLiteral("bd! %1").arg(bufferNumber).toUtf8());
 
         mEditors.remove(bufferNumber);
@@ -2393,6 +3373,21 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 mSearchPreviewPattern = pattern;
                 refreshSearchHighlights();
             }
+        } else if (method == "uiEnter" or method == "sessionLoaded" or method == "vimEnter") {
+            // The new server restored its session (see finishSessionRestore()).
+            // SessionLoadPost is the reliable signal; UIEnter is the fallback
+            // (the session source is another UIEnter autocommand, so its order
+            // relative to this one is not guaranteed).
+            if (mRestoringSession) {
+                const quint64 generation = mRestartGeneration;
+                QTimer::singleShot(0, this, [this, generation]() {
+                    if (generation == mRestartGeneration)
+                        finishSessionRestore();
+                });
+            }
+        } else if (method == "vimLeave") {
+            // VimLeavePre: the reason is v:exitreason, the code v:exiting.
+            handleNeovimLeave(methodArgs.value(0).toByteArray(), methodArgs.value(1).toInt());
         } else if (method == "floatFilter") {
             // The user registered (or removed) a float filter
             // (qnvim.float_filter()): ask it about the floating windows Neovim
@@ -2417,8 +3412,11 @@ void QNVimCore::handleNotification(const QByteArray &name, const QVariantList &a
                 // A window Neovim created: if it is still nothing but a window
                 // once the command that created it was fully processed, it is a
                 // split that needs an editor view (reconcileWindows()).
+                // WinNew fires before the window's buffer is set, so the event
+                // does not tell it; QNVimWindowInfo() reads it once the command
+                // is done.
                 if (!mWindows.contains(win))
-                    mWindows[win].buffer = buffer;
+                    mWindows[win].buffer = 0;
                 mNewWindows.insert(win);
                 mWindowsDirty = true;
             } else if (event == "WinEnter") {
@@ -2615,22 +3613,31 @@ void QNVimCore::redraw(const QVariantList &args) {
 
     if (flush) {
         // Neovim has fully processed the command that caused this redraw: the
-        // windows and the editor views can be reconciled.
-        reconcileWindows();
+        // windows and the editor views can be reconciled. While a restart is
+        // in progress the old server is going away or the new one is still
+        // restoring its session; the mappings are rebuilt afterwards.
+        if (!mRestartPending and !mRestoringSession) {
+            reconcileWindows();
+        }
 
         // The float overlays may have to move: they are placed relative to the
         // text area of the current editor, which may have changed.
         placeFloats();
     }
 
-    if (shouldSync and flush)
+    if (shouldSync and flush and !mRestartPending and !mRestoringSession)
         syncFromVim();
 
     updateCursorSize();
 }
 
 void QNVimCore::redrawEvent(const QByteArray &command, const QVariantList &args) {
-    if (command == "win_pos") {
+    if (command == "restart") {
+        // ["restart", [address, channel_config]]: the old server started a new
+        // one and is about to quit (see beginRestart()).
+        if (!args.isEmpty())
+            beginRestart(QString::fromUtf8(args[0].toByteArray()));
+    } else if (command == "win_pos") {
         // ["win_pos", grid, win, start_row, start_col, width, height]: the
         // window's grid, its position in Neovim's layout and its size. The grid
         // is what gets resized to the editor view (see resizeWindow()); the

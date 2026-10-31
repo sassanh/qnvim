@@ -1,5 +1,19 @@
 # Limitations
 
+## Restarting and quitting Neovim
+
+What `:restart` restores is what Neovim's session restores: buffers, splits,
+window sizes and the cursor line as `:mksession` saves them. Neovim does not
+save the cursor column or the exact scroll position (the top line) in a session,
+so qnvim cannot bring those back.
+
+After Neovim quits, qnvim has no backend. If Qt Creator's quit prompt is
+cancelled, Qt Creator stays open without Neovim; toggle QNVim off and on
+(*Tools > QNVim > Toggle QNVim*) to start a new one.
+
+A Neovim that exits with a non-zero code is treated as a crash, not as a quit:
+Qt Creator stays open and qnvim logs that Neovim exited.
+
 ## Tabpages
 
 Neovim tabpages do not become Qt Creator tabs. Their windows appear as splits in
