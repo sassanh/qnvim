@@ -38,7 +38,21 @@ function! SetCursor(line, col)
     endif
     call cursor(a:line, a:col)
 endfunction
+" The window a new window was split from. WinNew fires after WinLeave (which
+" leaves the window the split was made from) and before WinEnter (which enters
+" the new window), so the window left last is the source.
+let g:qnvim_window_source = {}
+let g:qnvim_last_win = win_getid()
+execute "autocmd WinLeave * let g:qnvim_last_win = win_getid()"
+execute "autocmd WinEnter * let g:qnvim_last_win = win_getid()"
 function! QNVimWinEvent(event, win, buffer)
+    if a:event ==# 'WinNew'
+        let g:qnvim_window_source[a:win] = g:qnvim_last_win
+    elseif a:event ==# 'WinClosed'
+        if has_key(g:qnvim_window_source, a:win)
+            call remove(g:qnvim_window_source, a:win)
+        endif
+    endif
     if win_gettype(a:win) !=# ''
         return
     endif
@@ -153,7 +167,7 @@ function! QNVimWindowInfo()
     for l:info in getwininfo()
         if win_gettype(l:info.winid) ==# ''
             let l:name = bufname(l:info.bufnr)
-            call add(l:windows, [l:info.winid, l:info.bufnr, empty(l:name) ? '' : fnamemodify(l:name, ':p'), l:info.winrow, l:info.wincol, l:info.width, l:info.height, l:info.tabnr, l:info.winid ==# win_getid()])
+            call add(l:windows, [l:info.winid, l:info.bufnr, empty(l:name) ? '' : fnamemodify(l:name, ':p'), l:info.winrow, l:info.wincol, l:info.width, l:info.height, l:info.tabnr, l:info.winid ==# win_getid(), get(g:qnvim_window_source, l:info.winid, 0)])
         endif
     endfor
     return l:windows

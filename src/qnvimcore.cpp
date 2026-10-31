@@ -1993,6 +1993,7 @@ void QNVimCore::reconcileWindows() {
             int row = 0;
             int col = 0;
             int tab = 0;
+            int source = 0; // the window this one was split from, if new
         };
         QList<WindowInfo> windows;
 
@@ -2008,6 +2009,8 @@ void QNVimCore::reconcileWindows() {
             window.row = info[3].toInt();
             window.col = info[4].toInt();
             window.tab = info[7].toInt();
+            if (info.size() > 9)
+                window.source = info[9].toInt();
             if (!window.win)
                 continue;
 
@@ -2095,63 +2098,77 @@ void QNVimCore::reconcileWindows() {
 
             if (mEditors.contains(window.buffer) or !window.filename.isEmpty()) {
                 // The view is created next to the view of the window Neovim
-                // split this one off: the window the new one is adjacent to in
-                // the layout. The new window can be before the window it was
-                // split from (left of / above it) as well, e.g. with
-                // 'splitright' or 'splitbelow'.
+                // split this one off. WinNew records the window that was left
+                // for the new one (see QNVimWinEvent), which is that source;
+                // its position relative to the new window gives the split's
+                // orientation and side. The new window can be before the
+                // source (left of / above it) as well, e.g. with 'splitright'
+                // or 'splitbelow'.
                 int sourceWin = 0;
                 bool sideBySide = false;
                 bool before = false;
-                int bestDistance = -1;
-                for (const WindowInfo &source : windows) {
-                    if (source.win == window.win or source.tab != window.tab)
-                        continue;
-                    auto sourceIt = mWindows.find(source.win);
-                    if (sourceIt == mWindows.end() or !sourceIt.value().bound)
-                        continue;
-
-                    bool candidateSideBySide = false;
-                    bool candidateBefore = false;
-                    int distance = -1;
-                    // A window's grid is sized to its editor view (see
-                    // resizeWindow()), so its width and height are those of
-                    // that view, not of the space it occupies in Neovim's
-                    // layout; only its position is the layout's. Windows side
-                    // by side in the layout are in the same row and differ in
-                    // the column, stacked ones are in the same column and
-                    // differ in the row; on either side, the nearest one is
-                    // the window the new one is next to.
-                    if (source.row == window.row and source.col != window.col) {
-                        candidateSideBySide = true;
-                        if (source.col < window.col) {
-                            // The source is left of the new window.
-                            candidateBefore = false;
-                            distance = window.col - source.col;
-                        } else {
-                            // The source is right of the new window.
-                            candidateBefore = true;
-                            distance = source.col - window.col;
+                if (window.source) {
+                    for (const WindowInfo &source : windows) {
+                        if (source.win != window.source or source.tab != window.tab)
+                            continue;
+                        auto sourceIt = mWindows.find(source.win);
+                        if (sourceIt == mWindows.end() or !sourceIt.value().bound)
+                            break;
+                        if (source.row == window.row and source.col != window.col) {
+                            sourceWin = source.win;
+                            sideBySide = true;
+                            before = window.col < source.col;
+                        } else if (source.col == window.col
+                                   and source.row != window.row) {
+                            sourceWin = source.win;
+                            sideBySide = false;
+                            before = window.row < source.row;
                         }
-                    } else if (source.col == window.col and source.row != window.row) {
-                        candidateSideBySide = false;
-                        if (source.row < window.row) {
-                            // The source is above the new window.
-                            candidateBefore = false;
-                            distance = window.row - source.row;
-                        } else {
-                            // The source is below the new window.
-                            candidateBefore = true;
-                            distance = source.row - window.row;
-                        }
-                    } else {
-                        continue;
+                        break;
                     }
+                }
 
-                    if (bestDistance < 0 or distance < bestDistance) {
-                        bestDistance = distance;
-                        sourceWin = source.win;
-                        sideBySide = candidateSideBySide;
-                        before = candidateBefore;
+                if (!sourceWin) {
+                    // Neovim did not report the source (or it is gone): use
+                    // the nearest window in the same row/column. A window's
+                    // grid is sized to its editor view (see resizeWindow()),
+                    // so its width and height are those of that view, not of
+                    // the space it occupies in Neovim's layout; only its
+                    // position is the layout's. Windows side by side in the
+                    // layout are in the same row and differ in the column,
+                    // stacked ones are in the same column and differ in the
+                    // row; on either side, the nearest one is the window the
+                    // new one is next to.
+                    int bestDistance = -1;
+                    for (const WindowInfo &source : windows) {
+                        if (source.win == window.win or source.tab != window.tab)
+                            continue;
+                        auto sourceIt = mWindows.find(source.win);
+                        if (sourceIt == mWindows.end() or !sourceIt.value().bound)
+                            continue;
+
+                        bool candidateSideBySide = false;
+                        bool candidateBefore = false;
+                        int distance = -1;
+                        if (source.row == window.row and source.col != window.col) {
+                            candidateSideBySide = true;
+                            candidateBefore = source.col > window.col;
+                            distance = qAbs(window.col - source.col);
+                        } else if (source.col == window.col
+                                   and source.row != window.row) {
+                            candidateSideBySide = false;
+                            candidateBefore = source.row > window.row;
+                            distance = qAbs(window.row - source.row);
+                        } else {
+                            continue;
+                        }
+
+                        if (bestDistance < 0 or distance < bestDistance) {
+                            bestDistance = distance;
+                            sourceWin = source.win;
+                            sideBySide = candidateSideBySide;
+                            before = candidateBefore;
+                        }
                     }
                 }
 

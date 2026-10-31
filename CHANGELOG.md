@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file. This projec
 
 - Splits no longer disappear when the layouts are reconciled: a split created in Neovim or in Qt Creator is paired with its counterpart on the other side, and is only removed when it is closed there. Reconciliation waits while a counterpart is being created, so it does not mistake the new window or view for a missing one and create a duplicate. A Qt Creator split that is removed now closes its Neovim window through the view's destruction instead of a periodic check.
 
+- A new Neovim window is paired with the window it was actually split from, so `:vsplit` creates a side-by-side Qt Creator split and `:split` a stacked one. The source used to be guessed from the nearest window's position in screen cells; another window could be closer on the other axis (for example, a window 30 rows below instead of 95 columns to the right), which made a `:vsplit` become a stacked split.
+
 - A buffer that is shown only in a floating window no longer replaces the current editor or leaves a document behind: `BufEnter` is forwarded to Qt Creator only for normal windows, so floats such as lazygit's `term://...` terminal are not mirrored as Qt Creator documents. Closing the float keeps the previous editor visible, while the float itself is still drawn as an overlay. Telescope and other unnamed scratch floats behave as before.
 
 - The build uses the Qt installation selected with `Qt6_DIR` consistently instead of mixing in a system Qt: neovim-qt's legacy `find_package(QT NAMES Qt6)` and Qt's tool packages no longer fall back to another installation. `CMAKE_PREFIX_PATH` remains the recommended way when several Qt versions are installed.
