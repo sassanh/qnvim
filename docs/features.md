@@ -58,6 +58,8 @@ qnvim spawns the `nvim` executable found in `PATH` and runs your
 - A split created on either side is never dropped by synchronization: it gets
   its counterpart on the other side. A split only disappears when it is closed
   in Neovim or in Qt Creator.
+- When Qt Creator restores a session with several editor views, Neovim's
+  windows are restored in the same arrangement, including a grid of views.
 
 ## Floating windows
 

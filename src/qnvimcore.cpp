@@ -1618,21 +1618,15 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
 
     mPendingWindowViews.insert(view);
 
-    const int source = sourceWin ? sourceWin : mCurrentWindow;
-    QByteArray direction = split;
-    if (direction.isEmpty()) {
-        // The orientation of the nearest splitter says where the view is in Qt
-        // Creator: a view side by side with the others gets a window next to
-        // the current one, a stacked view one below it.
-        direction = "below";
-        for (QWidget *widget = view; widget; widget = widget->parentWidget()) {
-            if (auto splitter = qobject_cast<QSplitter *>(widget)) {
-                if (splitter->orientation() == Qt::Horizontal)
-                    direction = "right";
-                break;
-            }
-        }
-    }
+    int splitSource = sourceWin;
+    QByteArray splitDirection = split;
+    if (!splitSource and splitDirection.isEmpty())
+        splitForView(view, splitSource, splitDirection);
+
+    const int source = splitSource ? splitSource : mCurrentWindow;
+    QByteArray direction = splitDirection;
+    if (direction.isEmpty())
+        direction = QByteArrayLiteral("below");
 
     QVariantMap config;
     config.insert("split", direction);
@@ -1727,6 +1721,11 @@ void QNVimCore::ensureWindowForView(Core::IEditor *editor, int sourceWin,
         // can create the split in Qt Creator instead.
         mRestoreViewsPending = false;
     });
+}
+
+void QNVimCore::ensureWindowForUnboundView() {
+    mRestoreViewsPending = true;
+    ensureWindowsForUnboundViews();
 }
 
 void QNVimCore::ensureWindowsForUnboundViews() {
@@ -2291,7 +2290,7 @@ void QNVimCore::attachEditorToWindow(Core::IEditor *editor) {
             return;
         }
 
-        ensureWindowForView(editor);
+        ensureWindowForUnboundView();
     });
 }
 
@@ -3141,7 +3140,7 @@ void QNVimCore::editorOpened(Core::IEditor *editor) {
             if (const int win = windowForEditor(editor))
                 syncWindow(win, editor);
             else
-                ensureWindowForView(editor);
+                ensureWindowForUnboundView();
         }
     } else if (const int sharedBuffer = bufferForEditor(editor)) {
         // Another editor shows the same document (a Qt Creator split shows its

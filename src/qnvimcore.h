@@ -251,6 +251,10 @@ class QNVimCore : public QObject {
     // After a restart: give each restored editor view that the session did not
     // restore a window, in the place Qt Creator shows it.
     void ensureWindowsForUnboundViews();
+    // Queue a view without a window for ensureWindowsForUnboundViews(): the
+    // windows are created one at a time, in layout order, so each one can be
+    // split off the already-bound window next to it.
+    void ensureWindowForUnboundView();
     // Neovim -> Qt Creator: create a split for a window, showing its buffer.
     // The window is split off from `sourceWin` (0 for "whatever is current").
     // `sideBySide` is the orientation of the split, `before` tells whether the
